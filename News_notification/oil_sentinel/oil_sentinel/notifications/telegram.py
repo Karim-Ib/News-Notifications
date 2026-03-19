@@ -239,6 +239,38 @@ def _digest_messages(alerts: list[dict], slot_label: str) -> list[str]:
     return _pack_messages(header, entries, continuation)
 
 
+def _format_morning_summary(alerts: list[dict], top_n: int = 7) -> str:
+    """Concise overnight summary — top N signals by magnitude."""
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    total = len(alerts)
+    top = alerts[:top_n]
+
+    header = (
+        f"\u2600\ufe0f <b>OIL SENTINEL \u2014 Overnight Summary</b>  \u00b7  <i>{now_str}</i>\n"
+        f"{total} signal{'s' if total != 1 else ''} overnight"
+        + (f"  \u00b7  showing top {top_n}" if total > top_n else "")
+    )
+
+    entries = []
+    for a in top:
+        magnitude = a.get("magnitude") or 0
+        direction = a.get("direction") or "neutral"
+        d_emoji = DIRECTION_EMOJI.get(direction, "->")
+        event_raw = a.get("event_type") or ""
+        event_label = EVENT_LABELS.get(event_raw, event_raw.replace("_", " ").title())
+        summary_raw = a.get("summary") or "(no summary)"
+        headline = summary_raw.split("\n\n", 1)[0].strip()
+        source = a.get("article_source") or ""
+        source_str = f"  <i>{_h(source)}</i>" if source else ""
+
+        entries.append(
+            f"{d_emoji} <b>[{magnitude}/10]</b> {_h(headline)}{source_str}\n"
+            f"   <i>{_h(event_label)}</i>"
+        )
+
+    return header + "\n" + SEP + "\n\n" + "\n\n".join(entries)
+
+
 def _format_market_alert(poll_results: dict) -> str:
     """Format a standalone market-anomaly notification."""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -373,6 +405,58 @@ async def dispatch_alerts(
             return 1
         else:
             logger.warning("Immediate batch send failed for %d alerts", len(qualifying))
+            return 0
+    finally:
+        conn.close()
+
+
+async def dispatch_morning_summary(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    *,
+    bot_token: str,
+    chat_id: str,
+    top_n: int = 7,
+) -> int:
+    """
+    Send a concise summary of all alerts accumulated overnight.
+    Marks every unsent alert as sent regardless of magnitude threshold —
+    the overnight window replaces normal dispatch entirely.
+    Returns 1 if sent, 0 if nothing to send.
+    """
+    conn = get_connection(db_path)
+    try:
+        unsent = get_unsent_alerts(conn)
+        if not unsent:
+            logger.info("Morning summary: no overnight alerts to summarise")
+            return 0
+
+        alerts = sorted(
+            [dict(r) for r in unsent],
+            key=lambda a: a.get("magnitude") or 0,
+            reverse=True,
+        )
+
+        messages = _pack_messages(
+            _format_morning_summary(alerts, top_n=top_n),
+            [],   # summary is already fully formatted, no per-entry packing needed
+            "",
+        )
+        # _format_morning_summary returns a single string — just send it directly
+        text = _format_morning_summary(alerts, top_n=top_n)
+        msg_id = await send_message(session, bot_token, chat_id, text)
+
+        if msg_id:
+            with transaction(conn):
+                for alert in alerts:
+                    mark_alert_sent(conn, alert["id"], telegram_msg_id=msg_id)
+            logger.info(
+                "Morning summary: sent %d overnight alerts -> msg_id=%d",
+                len(alerts), msg_id,
+            )
+            return 1
+        else:
+            logger.warning("Morning summary send failed")
             return 0
     finally:
         conn.close()

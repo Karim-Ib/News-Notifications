@@ -25,7 +25,7 @@ from oil_sentinel.config import Config, load as load_config
 from oil_sentinel.db import init_db
 from oil_sentinel.ingestion import poll_and_store as gdelt_poll
 from oil_sentinel.market import poll_and_store as market_poll, any_anomaly
-from oil_sentinel.notifications import dispatch_alerts, dispatch_digest, send_market_alert
+from oil_sentinel.notifications import dispatch_alerts, dispatch_digest, dispatch_morning_summary, send_market_alert
 from oil_sentinel.scoring import make_gemini_client, score_pending_articles
 
 CONFIG_PATH = Path(__file__).parent / "config.ini"
@@ -56,6 +56,21 @@ def setup_logging(level: str, log_file: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Idle mode helpers
+# ---------------------------------------------------------------------------
+
+def _is_overnight(cfg: Config, now: datetime) -> bool:
+    """Return True if the current UTC hour falls in the configured overnight window."""
+    if not cfg.idle.enabled:
+        return False
+    h = now.hour
+    s, e = cfg.idle.overnight_start, cfg.idle.overnight_end
+    if s > e:  # window crosses midnight, e.g. 22 → 09
+        return h >= s or h < e
+    return s <= h < e
+
+
+# ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
 
@@ -71,14 +86,20 @@ class State:
 # ---------------------------------------------------------------------------
 
 async def news_loop(cfg: Config, session: aiohttp.ClientSession) -> None:
-    """Poll GDELT every N minutes."""
-    interval = cfg.gdelt.poll_interval_minutes * 60
+    """Poll GDELT every N minutes (slower during overnight idle window)."""
     logger = logging.getLogger("news_loop")
     logger.info(
-        "News loop started (interval=%ds, age_cap=%dh, tier1=%d sources)",
-        interval, cfg.gdelt.max_article_age_hours, len(cfg.gdelt.tier1_domains),
+        "News loop started (interval=%dm, idle=%s, overnight=%s)",
+        cfg.gdelt.poll_interval_minutes,
+        cfg.idle.enabled,
+        f"{cfg.idle.overnight_start:02d}:00-{cfg.idle.overnight_end:02d}:00 UTC" if cfg.idle.enabled else "n/a",
     )
     while True:
+        now = datetime.now(timezone.utc)
+        overnight = _is_overnight(cfg, now)
+        interval_min = cfg.idle.poll_interval_minutes if overnight else cfg.gdelt.poll_interval_minutes
+        interval = interval_min * 60
+
         try:
             n = await gdelt_poll(
                 cfg.db_path,
@@ -86,11 +107,11 @@ async def news_loop(cfg: Config, session: aiohttp.ClientSession) -> None:
                 tone_threshold=cfg.gdelt.tone_threshold,
                 unknown_tone_threshold=cfg.gdelt.unknown_source_tone_threshold,
                 min_relevance=cfg.gdelt.min_relevance,
-                timespan=f"{cfg.gdelt.poll_interval_minutes}m",
+                timespan=f"{interval_min}m",
                 max_age_hours=cfg.gdelt.max_article_age_hours,
                 tier1_domains=cfg.gdelt.tier1_domains,
             )
-            logger.info("GDELT poll done: %d new articles", n)
+            logger.info("GDELT poll done: %d new articles%s", n, " [idle]" if overnight else "")
         except Exception as exc:
             logger.exception("News loop error: %s", exc)
         await asyncio.sleep(interval)
@@ -103,6 +124,11 @@ async def market_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
     logger.info("Market loop started (interval=%ds)", interval)
     loop = asyncio.get_running_loop()
     while True:
+        if _is_overnight(cfg, datetime.now(timezone.utc)):
+            state.market_anomaly = False
+            await asyncio.sleep(60)  # wake up every minute to re-check if overnight ended
+            continue
+
         try:
             results = await loop.run_in_executor(
                 None,
@@ -158,52 +184,83 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
             if n:
                 logger.info("Scored %d articles -> dispatching alerts", n)
 
-            sent = await dispatch_alerts(
-                cfg.db_path,
-                session,
-                bot_token=cfg.telegram.bot_token,
-                chat_id=cfg.telegram.chat_id,
-                alert_threshold=cfg.telegram.alert_threshold,
-                cooldown_minutes=cfg.telegram.cooldown_minutes,
-            )
-            if sent:
-                logger.info("Sent %d Telegram alerts", sent)
+            if _is_overnight(cfg, datetime.now(timezone.utc)):
+                logger.debug("Idle overnight — skipping alert dispatch")
+            else:
+                sent = await dispatch_alerts(
+                    cfg.db_path,
+                    session,
+                    bot_token=cfg.telegram.bot_token,
+                    chat_id=cfg.telegram.chat_id,
+                    alert_threshold=cfg.telegram.alert_threshold,
+                    cooldown_minutes=cfg.telegram.cooldown_minutes,
+                )
+                if sent:
+                    logger.info("Sent %d Telegram alerts", sent)
         except Exception as exc:
             logger.exception("Scoring loop error: %s", exc)
         await asyncio.sleep(interval)
 
 
 async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
-    """Send sub-threshold signal digests at configured UTC hours (default 12:00, 20:00)."""
+    """
+    Send sub-threshold digests at configured UTC hours.
+    When idle mode is enabled, also sends a morning summary at overnight_end
+    covering all signals accumulated during the night.
+    """
     logger = logging.getLogger("digest_loop")
     digest_hours = cfg.telegram.digest_hours
     slot_labels = {12: "Noon", 20: "Evening"}
-    logger.info("Digest loop started (slots=%s UTC)", digest_hours)
+    logger.info(
+        "Digest loop started (slots=%s UTC, idle=%s)",
+        digest_hours, cfg.idle.enabled,
+    )
 
     while True:
         now = datetime.now(timezone.utc)
         current_date = now.date()
         current_hour = now.hour
 
-        for hour in digest_hours:
-            key = (current_date, hour)
-            if current_hour >= hour and key not in state.sent_digests:
-                label = slot_labels.get(hour, f"{hour:02d}:00")
-                logger.info("Sending %s digest (slot %02d:00 UTC)", label, hour)
+        # Morning summary (idle mode only) — fires at overnight_end hour (e.g. 09:00)
+        if cfg.idle.enabled:
+            morning_hour = cfg.idle.morning_summary_hour
+            morning_key = ("morning", current_date, morning_hour)
+            if current_hour >= morning_hour and morning_key not in state.sent_digests:
+                logger.info("Sending overnight summary (idle mode, %02d:00 UTC)", morning_hour)
                 try:
-                    sent = await dispatch_digest(
+                    sent = await dispatch_morning_summary(
                         cfg.db_path,
                         session,
                         bot_token=cfg.telegram.bot_token,
                         chat_id=cfg.telegram.chat_id,
-                        alert_threshold=cfg.telegram.alert_threshold,
-                        slot_label=label,
                     )
                     if sent:
-                        logger.info("%s digest sent", label)
-                    state.sent_digests.add(key)
+                        logger.info("Morning summary sent")
+                    state.sent_digests.add(morning_key)
                 except Exception as exc:
-                    logger.exception("Digest loop error: %s", exc)
+                    logger.exception("Morning summary error: %s", exc)
+
+        # Regular daytime digests — skip during overnight window in idle mode
+        if not _is_overnight(cfg, now):
+            for hour in digest_hours:
+                key = ("digest", current_date, hour)
+                if current_hour >= hour and key not in state.sent_digests:
+                    label = slot_labels.get(hour, f"{hour:02d}:00")
+                    logger.info("Sending %s digest (slot %02d:00 UTC)", label, hour)
+                    try:
+                        sent = await dispatch_digest(
+                            cfg.db_path,
+                            session,
+                            bot_token=cfg.telegram.bot_token,
+                            chat_id=cfg.telegram.chat_id,
+                            alert_threshold=cfg.telegram.alert_threshold,
+                            slot_label=label,
+                        )
+                        if sent:
+                            logger.info("%s digest sent", label)
+                        state.sent_digests.add(key)
+                    except Exception as exc:
+                        logger.exception("Digest loop error: %s", exc)
 
         await asyncio.sleep(60)
 

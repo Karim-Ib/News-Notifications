@@ -53,6 +53,15 @@ class TelegramConfig:
 
 
 @dataclass
+class IdleConfig:
+    enabled: bool
+    overnight_start: int        # UTC hour when overnight window begins (e.g. 22)
+    overnight_end: int          # UTC hour when overnight window ends (e.g. 9)
+    poll_interval_minutes: int  # GDELT poll interval during overnight window
+    morning_summary_hour: int   # UTC hour to send the overnight summary (e.g. 9)
+
+
+@dataclass
 class LoggingConfig:
     level: str
     file: str
@@ -66,6 +75,7 @@ class Config:
     gemini: GeminiConfig
     telegram: TelegramConfig
     logging: LoggingConfig
+    idle: IdleConfig
 
 
 def load(config_path: Path) -> Config:
@@ -122,5 +132,12 @@ def load(config_path: Path) -> Config:
         logging=LoggingConfig(
             level=raw.get("logging", "level", fallback="INFO"),
             file=raw.get("logging", "file", fallback="oil_sentinel.log"),
+        ),
+        idle=IdleConfig(
+            enabled=raw.getboolean("idle", "enabled", fallback=False),
+            overnight_start=raw.getint("idle", "overnight_start", fallback=22),
+            overnight_end=raw.getint("idle", "overnight_end", fallback=9),
+            poll_interval_minutes=raw.getint("idle", "poll_interval_minutes", fallback=90),
+            morning_summary_hour=raw.getint("idle", "morning_summary_hour", fallback=9),
         ),
     )

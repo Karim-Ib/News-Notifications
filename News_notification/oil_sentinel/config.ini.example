@@ -40,11 +40,23 @@ min_relevance = 60
 bot_token = YOUR_TELEGRAM_BOT_TOKEN_HERE
 chat_id = YOUR_CHAT_ID_HERE
 # Cooldown in minutes before resending alert on same narrative thread
-cooldown_minutes = 60
+cooldown_minutes = 360
 # Minimum magnitude (0-10) for an immediate alert; signals below this go into the digest
 alert_threshold = 7
 # UTC hours to send the twice-daily digest of sub-threshold signals
 digest_hours = 12,20
+
+[idle]
+# Set enabled = true to activate overnight idle mode
+enabled = false
+# UTC hour when overnight window starts (markets close, alerts suppressed)
+overnight_start = 22
+# UTC hour when overnight window ends and morning summary fires
+overnight_end = 9
+# GDELT poll interval (minutes) during the overnight window
+poll_interval_minutes = 90
+# UTC hour for the morning summary message (should match overnight_end)
+morning_summary_hour = 9
 
 [logging]
 level = INFO

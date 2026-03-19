@@ -24,9 +24,11 @@ from google.genai import types
 
 from oil_sentinel.db import (
     get_connection,
+    get_recent_narrative_keys,
     get_unscored_articles,
     insert_alert,
     mark_article_scored,
+    narrative_exists_recent,
     transaction,
 )
 
@@ -103,6 +105,8 @@ USER_TEMPLATE = (
     "Published: {published_at}\n"
     "GDELT tone: {tone} (negative = negative sentiment; positive = positive sentiment)\n"
     "Actors: {actors}\n\n"
+    "Active narrative threads (reuse the EXACT key if this article is a follow-up):\n"
+    "{narrative_context}\n\n"
     "Score this article. Remember: diplomatic/deal/ceasefire articles are bearish. "
     "Military/seizure/sanction articles are bullish. Apply the bias check."
 )
@@ -111,7 +115,7 @@ _MAX_RETRIES = 3
 _BASE_RETRY_DELAY = 40  # seconds -- matches free-tier RPM window
 
 
-def _build_prompt(article: dict) -> str:
+def _build_prompt(article: dict, recent_narratives: list[str]) -> str:
     actors = []
     try:
         actors = json.loads(article.get("actors") or "[]")
@@ -122,12 +126,17 @@ def _build_prompt(article: dict) -> str:
         tone_str = f"{float(raw_tone):.2f}" if raw_tone is not None else "n/a"
     except (TypeError, ValueError):
         tone_str = "n/a"
+    if recent_narratives:
+        narrative_context = "  " + "\n  ".join(recent_narratives)
+    else:
+        narrative_context = "  (none yet)"
     return USER_TEMPLATE.format(
         title=article.get("title") or "(no title)",
         source=article.get("source_name") or "unknown",
         published_at=article.get("published_at") or "unknown",
         tone=tone_str,
         actors=", ".join(actors) or "unknown",
+        narrative_context=narrative_context,
     )
 
 
@@ -176,9 +185,10 @@ async def score_article(
     client: genai.Client,
     article: dict,
     model: str = "gemini-2.5-flash",
+    recent_narratives: Optional[list[str]] = None,
 ) -> Optional[dict]:
     """Call Gemini for one article with retry on 429. Returns parsed dict or None."""
-    prompt = _build_prompt(article)
+    prompt = _build_prompt(article, recent_narratives or [])
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
         temperature=0.2,
@@ -238,10 +248,30 @@ async def score_pending_articles(
 
         for row in rows:
             article = dict(row)
-            result = await score_article(client, article, model=model)
+
+            # Refresh narrative context before each article so Gemini sees
+            # keys generated earlier in this same batch
+            recent_narratives = get_recent_narrative_keys(conn, within_hours=12)
+
+            result = await score_article(
+                client, article, model=model, recent_narratives=recent_narratives
+            )
 
             with transaction(conn):
                 if result is None:
+                    mark_article_scored(conn, article["id"], skipped=True)
+                    continue
+
+                narrative_key = result["narrative_key"]
+
+                # Block duplicate: if a matching narrative already exists in
+                # the last 12h (exact or >=60% word-overlap), skip alert creation
+                existing = narrative_exists_recent(conn, narrative_key, within_hours=12)
+                if existing:
+                    logger.info(
+                        "Dedup: skipping [%s] — matches existing narrative [%s]",
+                        narrative_key, existing,
+                    )
                     mark_article_scored(conn, article["id"], skipped=True)
                     continue
 
@@ -252,7 +282,7 @@ async def score_pending_articles(
                 insert_alert(
                     conn,
                     article_id=article["id"],
-                    narrative_key=result["narrative_key"],
+                    narrative_key=narrative_key,
                     event_type=result["event_type"],
                     direction=result["direction"],
                     magnitude=result["magnitude"],

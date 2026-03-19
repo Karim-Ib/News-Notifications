@@ -306,6 +306,54 @@ def mark_alert_sent(
     )
 
 
+def get_recent_narrative_keys(
+    conn: sqlite3.Connection, within_hours: int = 12
+) -> list[str]:
+    """Return distinct narrative_keys created within the last N hours, most recent first."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT narrative_key FROM alerts
+        WHERE created_at >= datetime('now', ? || ' hours')
+        ORDER BY created_at DESC
+        """,
+        (f"-{within_hours}",),
+    ).fetchall()
+    return [r["narrative_key"] for r in rows]
+
+
+def _narrative_jaccard(a: str, b: str) -> float:
+    """Word-overlap similarity between two snake_case narrative keys (0.0–1.0)."""
+    wa = set(a.split("_"))
+    wb = set(b.split("_"))
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
+def narrative_exists_recent(
+    conn: sqlite3.Connection,
+    narrative_key: str,
+    within_hours: int = 12,
+    similarity_threshold: float = 0.6,
+) -> Optional[str]:
+    """
+    Return the matching existing narrative_key if one already exists within the window,
+    either as an exact match or with Jaccard word-overlap >= similarity_threshold.
+    Returns None if no match found.
+    """
+    recent = get_recent_narrative_keys(conn, within_hours=within_hours)
+    if not recent:
+        return None
+    # Exact match first
+    if narrative_key in recent:
+        return narrative_key
+    # Fuzzy: word-overlap
+    for existing in recent:
+        if _narrative_jaccard(narrative_key, existing) >= similarity_threshold:
+            return existing
+    return None
+
+
 def last_sent_for_narrative(
     conn: sqlite3.Connection, narrative_key: str
 ) -> Optional[str]:

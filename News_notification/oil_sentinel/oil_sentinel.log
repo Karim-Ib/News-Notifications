@@ -699,3 +699,261 @@
 2026-03-19 20:54:08  INFO      oil_sentinel.market.poller  CL=F: $93.83  chg=-0.26%  z=-2.37 [ANOMALY]
 2026-03-19 20:54:08  INFO      oil_sentinel.market.poller  BZ=F: $102.02  chg=-0.01%  z=-2.09 [ANOMALY]
 2026-03-19 20:54:08  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 93.83000183105469, 'change_pct': -0.2551268890699657, 'zscore': -2.3675791571279134, 'is_anomaly': True}, 'BZ=F': {'price': 102.0199966430664, 'change_pct': -0.009803132755205233, 'zscore': -2.092330960302518, 'is_anomaly': True}}
+2026-03-19 20:56:03  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 20:56:03  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:56:04  INFO      oil_sentinel.scoring.gemini  Scored [japan_pm_trump_hormuz] mag=2 conf=0.50 dir=neutral comp=2.00 | Japan Prime Minister to meet Trump as he pushes for help in 
+2026-03-19 20:56:08  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:56:09  INFO      oil_sentinel.scoring.gemini  Scored [trump_iran_oil_warning] mag=2 conf=0.50 dir=neutral comp=2.00 | Trump says he urged Netanyahu not to target Iran oil , gas f
+2026-03-19 20:56:13  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:56:14  INFO      oil_sentinel.scoring.gemini  Scored [oman_port_evacuation] mag=8 conf=0.50 dir=bullish comp=5.00 | Baystreet . ca - Oman Evacuates Key Oil Port as Iran War Int
+2026-03-19 20:56:18  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:56:20  INFO      oil_sentinel.scoring.gemini  Scored [us_iran_tensions_escalate] mag=6 conf=0.50 dir=bullish comp=4.00 | iran will face its biggest attack yet trump aide issues a di
+2026-03-19 20:56:24  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:56:25  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_tolls_iran_proposal] mag=6 conf=0.50 dir=bullish comp=4.00 | Iran legislators propose tolls on shipping through Strait of
+2026-03-19 20:56:29  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 20:56:29  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 1 alerts in 1 message(s) (ids=[122]) -> last msg_id=34
+2026-03-19 20:56:29  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 20:58:29  INFO      oil_sentinel.scoring.gemini  Scoring 4 articles with Gemini
+2026-03-19 20:58:29  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:58:30  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_a10_iran_clash] mag=7 conf=0.50 dir=bullish comp=4.50 | A - 10 Warthogs target Iranian fast - attack craft in Strait
+2026-03-19 20:58:34  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:58:35  INFO      oil_sentinel.scoring.gemini  Scored [iran_war_oil_shock] mag=7 conf=0.70 dir=bullish comp=5.90 | Iran war : How the oil shock is worsening and hitting motori
+2026-03-19 20:58:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:58:42  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_blockade_analysis] mag=2 conf=0.50 dir=neutral comp=2.00 | Strait of Hormuz shipping crisis explained : Five ways oil a
+2026-03-19 20:58:46  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:58:47  INFO      oil_sentinel.scoring.gemini  Scored [qatar_iran_war_rhetoric] mag=2 conf=0.55 dir=neutral comp=2.10 | Qatar calls for  immediate  end to war on Iran after attack 
+2026-03-19 20:58:51  INFO      scoring_loop  Scored 4 articles -> dispatching alerts
+2026-03-19 20:58:51  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 2 alerts in 1 message(s) (ids=[125, 126]) -> last msg_id=35
+2026-03-19 20:58:51  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 20:59:08  INFO      oil_sentinel.market.poller  CL=F: $94.04  chg=0.22%  z=-1.98
+2026-03-19 20:59:09  INFO      oil_sentinel.market.poller  BZ=F: $102.24  chg=0.22%  z=-1.78
+2026-03-19 21:00:08  INFO      digest_loop  Sending Evening digest (slot 20:00 UTC)
+2026-03-19 21:00:08  INFO      oil_sentinel.notifications.telegram  Digest (Evening): sent 12 alerts in 1 message(s) -> last msg_id=36
+2026-03-19 21:00:08  INFO      digest_loop  Evening digest sent
+2026-03-19 21:04:09  INFO      oil_sentinel.market.poller  CL=F: $94.17  chg=0.14%  z=-1.75
+2026-03-19 21:04:09  INFO      oil_sentinel.market.poller  BZ=F: $102.68  chg=0.43%  z=-1.38
+2026-03-19 21:05:27  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:05:49  INFO      oil_sentinel.ingestion.gdelt  GDELT: 28 passed (from 250 raw) | dropped: content=222 age=0 tone=0 relevance=0
+2026-03-19 21:05:58  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:06:13  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 21:06:45  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 60s (attempt 3)
+2026-03-19 21:07:46  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 120s (attempt 4)
+2026-03-19 21:09:09  INFO      oil_sentinel.market.poller  CL=F: $94.26  chg=0.10%  z=-1.58
+2026-03-19 21:09:09  INFO      oil_sentinel.market.poller  BZ=F: $102.90  chg=0.21%  z=-1.18
+2026-03-19 21:09:46  ERROR     oil_sentinel.ingestion.gdelt  GDELT fetch failed after all retries
+2026-03-19 21:09:54  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 1 new articles stored, 12 skipped (title dedup)
+2026-03-19 21:09:54  INFO      news_loop  GDELT poll done: 1 new articles
+2026-03-19 21:10:51  INFO      oil_sentinel.scoring.gemini  Scoring 1 articles with Gemini
+2026-03-19 21:10:51  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:10:52  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_blockade_rhetoric] mag=2 conf=0.50 dir=neutral comp=1.00 | Canada , allies say theyre ready to help stop Iran shipping 
+2026-03-19 21:10:56  INFO      scoring_loop  Scored 1 articles -> dispatching alerts
+2026-03-19 21:14:09  INFO      oil_sentinel.market.poller  CL=F: $94.47  chg=0.22%  z=-1.37
+2026-03-19 21:14:09  INFO      oil_sentinel.market.poller  BZ=F: $102.81  chg=-0.09%  z=-1.20
+2026-03-19 21:19:10  INFO      oil_sentinel.market.poller  CL=F: $94.43  chg=-0.04%  z=-1.34
+2026-03-19 21:19:10  INFO      oil_sentinel.market.poller  BZ=F: $102.96  chg=0.15%  z=-1.06
+2026-03-19 21:24:10  INFO      oil_sentinel.market.poller  CL=F: $94.53  chg=0.11%  z=-1.22
+2026-03-19 21:24:10  INFO      oil_sentinel.market.poller  BZ=F: $102.88  chg=-0.08%  z=-1.08
+2026-03-19 21:24:55  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:25:12  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 21:25:47  INFO      oil_sentinel.ingestion.gdelt  GDELT: 18 passed (from 250 raw) | dropped: content=232 age=0 tone=0 relevance=0
+2026-03-19 21:25:57  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:26:15  INFO      oil_sentinel.ingestion.gdelt  GDELT: 37 passed (from 250 raw) | dropped: content=213 age=0 tone=0 relevance=0
+2026-03-19 21:26:23  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 10 new articles stored, 9 skipped (title dedup)
+2026-03-19 21:26:23  INFO      news_loop  GDELT poll done: 10 new articles
+2026-03-19 21:26:57  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 21:26:57  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:26:58  INFO      oil_sentinel.scoring.gemini  Scored [iran_gulf_oil_attacks] mag=8 conf=0.70 dir=bullish comp=5.60 | Iran mounting attacks on Gulf oil and gas sites send energy 
+2026-03-19 21:27:02  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:27:03  INFO      oil_sentinel.scoring.gemini  Scored [iran_conflict_dairy_impact] mag=0 conf=0.50 dir=neutral comp=0.00 | How the Iran Conflict Is Disrupting Global Dairy Supply Chai
+2026-03-19 21:27:07  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:27:09  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_diplomatic_effort] mag=5 conf=0.70 dir=bearish comp=3.50 | US - Iran war : European leaders , Japan offer to help Trump
+2026-03-19 21:27:13  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:27:14  INFO      oil_sentinel.scoring.gemini  Scored [india_russia_lpg_talks] mag=2 conf=0.50 dir=neutral comp=1.00 | India diversifying energy supplies , we will go if LPG suppl
+2026-03-19 21:27:18  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:27:19  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_reopening_rhetoric] mag=2 conf=0.70 dir=neutral comp=1.40 | Canada , allies ready to help reopen the Strait of Hormuz
+2026-03-19 21:27:23  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 21:27:23  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 1 alerts in 1 message(s) (ids=[130]) -> last msg_id=37
+2026-03-19 21:27:23  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 21:29:11  INFO      oil_sentinel.market.poller  CL=F: $94.23  chg=-0.32%  z=-1.38
+2026-03-19 21:29:11  INFO      oil_sentinel.market.poller  BZ=F: $102.73  chg=-0.15%  z=-1.14
+2026-03-19 21:29:23  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 21:29:23  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:29:24  INFO      oil_sentinel.scoring.gemini  Scored [red_sea_terminal_attack] mag=7 conf=0.60 dir=bullish comp=4.20 | Saudi Arabia Loses Patience as Red Sea Terminal and Refinery
+2026-03-19 21:29:28  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:29:30  INFO      oil_sentinel.scoring.gemini  Scored [iran_gulf_facility_attacks] mag=7 conf=0.50 dir=bullish comp=3.50 | Brent Crude Oil Briefly Topped $119 as Iran Ramps Up Attacks
+2026-03-19 21:29:34  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:29:35  INFO      oil_sentinel.scoring.gemini  Scored [eu_iran_ceasefire_push] mag=3 conf=0.50 dir=bearish comp=1.50 | European Leaders Urge Urgent U . S .- Israel - Iran Ceasefir
+2026-03-19 21:29:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:29:40  INFO      oil_sentinel.scoring.gemini  Scored [iran_persian_gulf_attacks] mag=9 conf=0.70 dir=bullish comp=6.30 | Oil and LNG prices surge after Iran attacks Persian Gulf ene
+2026-03-19 21:29:44  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:29:45  INFO      oil_sentinel.scoring.gemini  Scored [trump_iran_rhetoric] mag=1 conf=0.50 dir=neutral comp=0.50 | Donald Trump Makes Pearl Harbor Jab to Japan PM When Asked A
+2026-03-19 21:29:50  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 21:29:50  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 3 alerts in 1 message(s) (ids=[138, 135, 136]) -> last msg_id=38
+2026-03-19 21:29:50  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 21:34:11  INFO      oil_sentinel.market.poller  CL=F: $94.41  chg=0.19%  z=-1.21
+2026-03-19 21:34:11  INFO      oil_sentinel.market.poller  BZ=F: $103.03  chg=0.29%  z=-0.92
+2026-03-19 21:39:11  INFO      oil_sentinel.market.poller  CL=F: $94.42  chg=0.01%  z=-1.16
+2026-03-19 21:39:11  INFO      oil_sentinel.market.poller  BZ=F: $102.94  chg=-0.09%  z=-0.96
+2026-03-19 21:41:24  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:41:39  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 21:42:10  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 60s (attempt 3)
+2026-03-19 21:43:18  INFO      oil_sentinel.ingestion.gdelt  GDELT: 20 passed (from 250 raw) | dropped: content=230 age=0 tone=0 relevance=0
+2026-03-19 21:43:26  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 21:43:47  INFO      oil_sentinel.ingestion.gdelt  GDELT: 35 passed (from 250 raw) | dropped: content=215 age=0 tone=0 relevance=0
+2026-03-19 21:43:55  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 3 new articles stored, 10 skipped (title dedup)
+2026-03-19 21:43:55  INFO      news_loop  GDELT poll done: 3 new articles
+2026-03-19 21:44:11  INFO      oil_sentinel.market.poller  CL=F: $94.12  chg=-0.32%  z=-1.32
+2026-03-19 21:44:11  INFO      oil_sentinel.market.poller  BZ=F: $102.71  chg=-0.22%  z=-1.08
+2026-03-19 21:45:50  INFO      oil_sentinel.scoring.gemini  Scoring 3 articles with Gemini
+2026-03-19 21:45:50  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:45:51  INFO      oil_sentinel.scoring.gemini  Scored [trump_iran_rhetoric] mag=2 conf=0.50 dir=neutral comp=1.00 | Trump makes Pearl Harbor comparison in front of Japan PM to 
+2026-03-19 21:45:55  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:45:57  INFO      oil_sentinel.scoring.gemini  Scored [iran_bushehr_projectile] mag=2 conf=0.50 dir=neutral comp=1.00 | What to know about Iran Bushehr nuclear power plant after re
+2026-03-19 21:46:01  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 21:46:02  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_infrastructure_attack] mag=7 conf=0.70 dir=bullish comp=4.90 | Strait of Hormuz tensions escalate as Iran targets regional 
+2026-03-19 21:46:06  INFO      scoring_loop  Scored 3 articles -> dispatching alerts
+2026-03-19 21:46:06  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 1 alerts in 1 message(s) (ids=[142]) -> last msg_id=39
+2026-03-19 21:46:06  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 21:49:12  INFO      oil_sentinel.market.poller  CL=F: $94.27  chg=0.16%  z=-1.18
+2026-03-19 21:49:12  INFO      oil_sentinel.market.poller  BZ=F: $102.84  chg=0.13%  z=-0.97
+2026-03-19 21:54:12  INFO      oil_sentinel.market.poller  CL=F: $94.70  chg=0.46%  z=-0.88
+2026-03-19 21:54:12  INFO      oil_sentinel.market.poller  BZ=F: $103.43  chg=0.57%  z=-0.57
+2026-03-19 22:15:03  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 22:15:03  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 22:15:03  INFO      news_loop  News loop started (interval=900s, age_cap=12h, tier1=15 sources)
+2026-03-19 22:15:03  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 22:15:04  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 22:15:04  INFO      digest_loop  Digest loop started (slots=[12, 20] UTC)
+2026-03-19 22:15:04  INFO      digest_loop  Sending Noon digest (slot 12:00 UTC)
+2026-03-19 22:15:04  INFO      oil_sentinel.notifications.telegram  Digest (Noon): sent 9 alerts in 1 message(s) -> last msg_id=40
+2026-03-19 22:15:04  INFO      digest_loop  Noon digest sent
+2026-03-19 22:15:04  INFO      digest_loop  Sending Evening digest (slot 20:00 UTC)
+2026-03-19 22:15:04  INFO      oil_sentinel.notifications.telegram  Digest (Evening): no sub-threshold alerts to summarise
+2026-03-19 22:15:05  INFO      oil_sentinel.market.poller  CL=F: $94.59  chg=-0.12%  z=-0.93
+2026-03-19 22:15:06  INFO      oil_sentinel.market.poller  BZ=F: $103.02  chg=-0.40%  z=-0.83
+2026-03-19 22:15:07  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 22:15:28  INFO      oil_sentinel.ingestion.gdelt  GDELT: 27 passed (from 250 raw) | dropped: content=223 age=0 tone=0 relevance=0
+2026-03-19 22:15:38  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 22:15:54  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 22:16:33  INFO      oil_sentinel.ingestion.gdelt  GDELT: 32 passed (from 250 raw) | dropped: content=218 age=0 tone=0 relevance=0
+2026-03-19 22:16:42  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 20 new articles stored, 13 skipped (title dedup)
+2026-03-19 22:16:42  INFO      news_loop  GDELT poll done: 20 new articles
+2026-03-19 22:17:04  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 22:17:04  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:17:06  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_war_oil_shock] — matches existing narrative [iran_war_oil_shock]
+2026-03-19 22:17:06  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:17:09  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_security_cooperation] — matches existing narrative [hormuz_security_cooperation]
+2026-03-19 22:17:09  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:17:11  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_joint_statement] — matches existing narrative [hormuz_joint_statement]
+2026-03-19 22:17:11  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:17:13  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_safe_passage] — matches existing narrative [hormuz_safe_passage]
+2026-03-19 22:17:13  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:17:16  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [trump_iran_rhetoric] — matches existing narrative [trump_iran_rhetoric]
+2026-03-19 22:19:16  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 22:19:16  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:19:18  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_security_diplomacy] — matches existing narrative [hormuz_security_diplomacy]
+2026-03-19 22:19:18  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:19:20  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_gulf_refinery_strikes] — matches existing narrative [iran_gulf_refinery_strikes]
+2026-03-19 22:19:20  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:19:23  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_joint_statement] — matches existing narrative [hormuz_joint_statement]
+2026-03-19 22:19:23  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:19:24  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_blockade_threat] — matches existing narrative [hormuz_blockade_threat]
+2026-03-19 22:19:24  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:19:26  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [eu_iran_attack_pushback] — matches existing narrative [eu_iran_attack_pushback]
+2026-03-19 22:20:06  INFO      oil_sentinel.market.poller  CL=F: $94.59  chg=0.00%  z=-0.91
+2026-03-19 22:20:06  INFO      oil_sentinel.market.poller  BZ=F: $103.02  chg=0.00%  z=-0.81
+2026-03-19 22:21:26  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 22:21:26  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:21:27  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_gulf_facility_attacks] — matches existing narrative [iran_gulf_facility_attacks]
+2026-03-19 22:21:27  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:21:29  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_security_deployment] — matches existing narrative [hormuz_security_deployment]
+2026-03-19 22:21:29  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:21:31  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_infrastructure_attack] — matches existing narrative [iran_infrastructure_attack]
+2026-03-19 22:21:31  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:21:33  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_security_diplomacy] — matches existing narrative [hormuz_security_diplomacy]
+2026-03-19 22:21:33  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:21:36  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_gulf_strikes] — matches existing narrative [iran_gulf_strikes]
+2026-03-19 22:23:36  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 22:23:36  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:23:38  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [hormuz_joint_statement] — matches existing narrative [hormuz_joint_statement]
+2026-03-19 22:23:38  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:23:40  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [eu_iran_ceasefire_push] — matches existing narrative [eu_iran_ceasefire_push]
+2026-03-19 22:23:40  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:23:42  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [iran_gulf_facility_attacks] — matches existing narrative [iran_gulf_facility_attacks]
+2026-03-19 22:23:42  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:23:44  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [us_sanctions_relief_consideration] — matches existing narrative [us_sanctions_relief_consideration]
+2026-03-19 22:23:44  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 22:23:46  INFO      oil_sentinel.scoring.gemini  Dedup: skipping [south_pars_attack] — matches existing narrative [south_pars_attack]
+2026-03-19 22:25:06  INFO      oil_sentinel.market.poller  CL=F: $94.59  chg=0.00%  z=-0.89
+2026-03-19 22:25:06  INFO      oil_sentinel.market.poller  BZ=F: $103.02  chg=0.00%  z=-0.80
+2026-03-19 22:30:06  INFO      oil_sentinel.market.poller  CL=F: $94.59  chg=0.00%  z=-0.88
+2026-03-19 22:30:06  INFO      oil_sentinel.market.poller  BZ=F: $103.02  chg=0.00%  z=-0.78
+2026-03-19 22:32:08  INFO      oil_sentinel.ingestion.gdelt  GDELT: 25 passed (from 250 raw) | dropped: content=225 age=0 tone=0 relevance=0
+2026-03-19 22:32:47  ERROR     news_loop  News loop error: 
+Traceback (most recent call last):
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\client.py", line 779, in _request
+    resp = await handler(req)
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        req, traces=traces, timeout=real_timeout
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\connector.py", line 1580, in _create_direct_connection
+    transp, proto = await self._wrap_create_connection(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\connector.py", line 1313, in _wrap_create_connection
+    return await self._loop.create_connection(*args, **kwargs, sock=sock)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 1198, in create_connection
+    transport, protocol = await self._create_connection_transport(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        ssl_shutdown_timeout=ssl_shutdown_timeout)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 1231, in _create_connection_transport
+    await waiter
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Nutzer\Documents\GitHub\News_notification\oil_sentinel\main.py", line 83, in news_loop
+    n = await gdelt_poll(
+        ^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+    )
+    ^
+  File "C:\Users\Nutzer\Documents\GitHub\News_notification\oil_sentinel\oil_sentinel\ingestion\gdelt.py", line 259, in poll_and_store
+    batch = await fetch_gdelt_articles(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+    )
+    ^
+  File "C:\Users\Nutzer\Documents\GitHub\News_notification\oil_sentinel\oil_sentinel\ingestion\gdelt.py", line 137, in fetch_gdelt_articles
+    async with session.get(
+               ~~~~~~~~~~~^
+        GDELT_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ) as resp:
+    ^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+                           ^^^^^^^^^^^^^^^^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\client.py", line 624, in _request
+    with timer:
+         ^^^^^
+  File "C:\Users\Nutzer\AppData\Roaming\Python\Python314\site-packages\aiohttp\helpers.py", line 713, in __exit__
+    raise asyncio.TimeoutError from exc_val
+TimeoutError
