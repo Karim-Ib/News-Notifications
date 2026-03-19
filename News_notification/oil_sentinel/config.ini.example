@@ -24,7 +24,7 @@ zscore_window = 288
 zscore_threshold = 2.0
 
 [gemini]
-api_key = AIzaSyC2XlLWwO8mYlszVu5zPZSG74flpkg9_3c
+api_key = APIKEY
 model = gemini-2.0-flash
 # Max articles sent to Gemini per scoring cycle
 batch_size = 5
