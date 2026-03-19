@@ -1,0 +1,5 @@
+"""Notifications subpackage (Telegram alerts)."""
+
+from oil_sentinel.notifications.telegram import dispatch_alerts, dispatch_digest, send_market_alert
+
+__all__ = ["dispatch_alerts", "dispatch_digest", "send_market_alert"]
