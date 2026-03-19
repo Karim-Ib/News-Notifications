@@ -1,5 +1,5 @@
 2026-03-19 16:30:39  INFO      main  Database initialised at oil_sentinel.db
-2026-03-19 16:30:39  INFO      main  oil_sentinel starting � three loops launching
+2026-03-19 16:30:39  INFO      main  oil_sentinel starting � three loops launching
 2026-03-19 16:30:39  INFO      news_loop  News loop started (interval=900s)
 2026-03-19 16:30:39  INFO      market_loop  Market loop started (interval=300s)
 2026-03-19 16:30:39  INFO      scoring_loop  Scoring loop started (interval=120s)
@@ -606,3 +606,96 @@
 2026-03-19 20:42:51  INFO      market_loop  Market anomaly alert sent
 2026-03-19 20:42:54  INFO      oil_sentinel.ingestion.gdelt  GDELT: 28 passed (from 250 raw) | dropped: content=222 age=0 tone=0 relevance=0
 2026-03-19 20:43:03  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 20:49:07  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 20:49:07  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 20:49:07  INFO      news_loop  News loop started (interval=900s, age_cap=12h, tier1=15 sources)
+2026-03-19 20:49:07  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 20:49:08  INFO      oil_sentinel.market.poller  CL=F: $94.07  chg=0.34%  z=-2.43 [ANOMALY]
+2026-03-19 20:49:08  INFO      oil_sentinel.market.poller  BZ=F: $102.03  chg=0.70%  z=-2.31 [ANOMALY]
+2026-03-19 20:49:08  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 20:49:08  INFO      digest_loop  Digest loop started (slots=[12, 20] UTC)
+2026-03-19 20:49:08  INFO      digest_loop  Sending Noon digest (slot 12:00 UTC)
+2026-03-19 20:49:08  INFO      oil_sentinel.notifications.telegram  Digest (Noon): no sub-threshold alerts to summarise
+2026-03-19 20:49:08  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 94.06999969482422, 'change_pct': 0.3413330078125, 'zscore': -2.4295141179159376, 'is_anomaly': True}, 'BZ=F': {'price': 102.02999877929688, 'change_pct': 0.7007491972080272, 'zscore': -2.306031889261424, 'is_anomaly': True}}
+2026-03-19 20:49:08  INFO      oil_sentinel.notifications.telegram  Market anomaly alert sent for ['CL=F', 'BZ=F'] -> msg_id=30
+2026-03-19 20:49:08  INFO      market_loop  Market anomaly alert sent
+2026-03-19 20:49:14  INFO      oil_sentinel.ingestion.gdelt  GDELT: 28 passed (from 250 raw) | dropped: content=222 age=0 tone=0 relevance=0
+2026-03-19 20:49:24  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 20:49:40  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 20:50:18  INFO      oil_sentinel.ingestion.gdelt  GDELT: 39 passed (from 250 raw) | dropped: content=211 age=0 tone=0 relevance=0
+2026-03-19 20:50:26  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 19 new articles stored, 12 skipped (title dedup)
+2026-03-19 20:50:26  INFO      news_loop  GDELT poll done: 19 new articles
+2026-03-19 20:51:08  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 20:51:08  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:10  INFO      oil_sentinel.scoring.gemini  Scored [iran_attacks_qatar_facility] mag=8 conf=0.70 dir=bullish comp=6.60 | Oil and gas prices soar after Iran attacks Qatar facility | 
+2026-03-19 20:51:14  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:15  INFO      oil_sentinel.scoring.gemini  Scored [japan_trump_hormuz_talks] mag=2 conf=0.50 dir=neutral comp=2.00 | Japan Takaichi tries to reaffirm alliance with Trump as he s
+2026-03-19 20:51:19  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:20  INFO      oil_sentinel.scoring.gemini  Scored [russia_iran_nuclear_warning] mag=3 conf=0.50 dir=neutral comp=2.50 | Russia Warns Israel - US :  इराणच्या अणुप्रकल्पावर हल्ला करू
+2026-03-19 20:51:24  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:26  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_history_analysis] mag=2 conf=0.50 dir=neutral comp=2.00 | The Strait of Hormuz has a long history of disruption
+2026-03-19 20:51:30  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:31  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_evacuation_plan] mag=7 conf=0.70 dir=bullish comp=5.90 | IMO planning to evacuate ships , seafarers from Strait of Ho
+2026-03-19 20:51:35  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 20:51:35  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 2 alerts in 1 message(s) (ids=[110, 114]) -> last msg_id=31
+2026-03-19 20:51:35  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 20:53:35  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 20:53:35  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:37  INFO      oil_sentinel.scoring.gemini  Scored [haifa_refinery_attack] mag=9 conf=0.50 dir=bullish comp=5.50 | Israel : Haifa Oil Refinery Hit By Iranian Missile
+2026-03-19 20:53:41  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:43  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_diplomatic_efforts] mag=3 conf=0.50 dir=bearish comp=2.50 | Japan , Europeans signal  readiness to contribute  to effort
+2026-03-19 20:53:47  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:48  INFO      oil_sentinel.scoring.gemini  Scored [china_fuel_export_halt] mag=7 conf=0.50 dir=bullish comp=4.50 | Baystreet . ca - China Halts Fuel Exports as Hormuz Crisis T
+2026-03-19 20:53:52  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:53  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_security_cooperation] mag=4 conf=0.70 dir=bearish comp=3.80 | European allies and Japan signal readiness to help secure St
+2026-03-19 20:53:57  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:49:07  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 20:49:07  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 20:49:07  INFO      news_loop  News loop started (interval=900s, age_cap=12h, tier1=15 sources)
+2026-03-19 20:49:07  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 20:49:08  INFO      oil_sentinel.market.poller  CL=F: $94.07  chg=0.34%  z=-2.43 [ANOMALY]
+2026-03-19 20:49:08  INFO      oil_sentinel.market.poller  BZ=F: $102.03  chg=0.70%  z=-2.31 [ANOMALY]
+2026-03-19 20:49:08  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 20:49:08  INFO      digest_loop  Digest loop started (slots=[12, 20] UTC)
+2026-03-19 20:49:08  INFO      digest_loop  Sending Noon digest (slot 12:00 UTC)
+2026-03-19 20:49:08  INFO      oil_sentinel.notifications.telegram  Digest (Noon): no sub-threshold alerts to summarise
+2026-03-19 20:49:08  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 94.06999969482422, 'change_pct': 0.3413330078125, 'zscore': -2.4295141179159376, 'is_anomaly': True}, 'BZ=F': {'price': 102.02999877929688, 'change_pct': 0.7007491972080272, 'zscore': -2.306031889261424, 'is_anomaly': True}}
+2026-03-19 20:49:08  INFO      oil_sentinel.notifications.telegram  Market anomaly alert sent for ['CL=F', 'BZ=F'] -> msg_id=30
+2026-03-19 20:49:08  INFO      market_loop  Market anomaly alert sent
+2026-03-19 20:49:14  INFO      oil_sentinel.ingestion.gdelt  GDELT: 28 passed (from 250 raw) | dropped: content=222 age=0 tone=0 relevance=0
+2026-03-19 20:49:24  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 20:49:40  WARNING   oil_sentinel.ingestion.gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 20:50:18  INFO      oil_sentinel.ingestion.gdelt  GDELT: 39 passed (from 250 raw) | dropped: content=211 age=0 tone=0 relevance=0
+2026-03-19 20:50:26  INFO      oil_sentinel.ingestion.gdelt  GDELT poll: 19 new articles stored, 12 skipped (title dedup)
+2026-03-19 20:50:26  INFO      news_loop  GDELT poll done: 19 new articles
+2026-03-19 20:51:08  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 20:51:08  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:10  INFO      oil_sentinel.scoring.gemini  Scored [iran_attacks_qatar_facility] mag=8 conf=0.70 dir=bullish comp=6.60 | Oil and gas prices soar after Iran attacks Qatar facility | 
+2026-03-19 20:51:14  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:15  INFO      oil_sentinel.scoring.gemini  Scored [japan_trump_hormuz_talks] mag=2 conf=0.50 dir=neutral comp=2.00 | Japan Takaichi tries to reaffirm alliance with Trump as he s
+2026-03-19 20:51:19  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:20  INFO      oil_sentinel.scoring.gemini  Scored [russia_iran_nuclear_warning] mag=3 conf=0.50 dir=neutral comp=2.50 | Russia Warns Israel - US :  इराणच्या अणुप्रकल्पावर हल्ला करू
+2026-03-19 20:51:24  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:26  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_history_analysis] mag=2 conf=0.50 dir=neutral comp=2.00 | The Strait of Hormuz has a long history of disruption
+2026-03-19 20:51:30  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:51:31  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_evacuation_plan] mag=7 conf=0.70 dir=bullish comp=5.90 | IMO planning to evacuate ships , seafarers from Strait of Ho
+2026-03-19 20:51:35  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 20:51:35  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 2 alerts in 1 message(s) (ids=[110, 114]) -> last msg_id=31
+2026-03-19 20:51:35  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 20:53:35  INFO      oil_sentinel.scoring.gemini  Scoring 5 articles with Gemini
+2026-03-19 20:53:35  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:37  INFO      oil_sentinel.scoring.gemini  Scored [haifa_refinery_attack] mag=9 conf=0.50 dir=bullish comp=5.50 | Israel : Haifa Oil Refinery Hit By Iranian Missile
+2026-03-19 20:53:41  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:43  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_diplomatic_efforts] mag=3 conf=0.50 dir=bearish comp=2.50 | Japan , Europeans signal  readiness to contribute  to effort
+2026-03-19 20:53:47  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:48  INFO      oil_sentinel.scoring.gemini  Scored [china_fuel_export_halt] mag=7 conf=0.50 dir=bullish comp=4.50 | Baystreet . ca - China Halts Fuel Exports as Hormuz Crisis T
+2026-03-19 20:53:52  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:53  INFO      oil_sentinel.scoring.gemini  Scored [hormuz_security_cooperation] mag=4 conf=0.70 dir=bearish comp=3.80 | European allies and Japan signal readiness to help secure St
+2026-03-19 20:53:57  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 20:53:58  INFO      oil_sentinel.scoring.gemini  Scored [iran_sanctions_relief_talk] mag=6 conf=0.50 dir=bearish comp=4.00 | Treasury chief says US may  unsanction  Iran oil already bei
+2026-03-19 20:54:02  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 20:54:03  INFO      oil_sentinel.notifications.telegram  Sent immediate batch: 2 alerts in 1 message(s) (ids=[115, 117]) -> last msg_id=33
+2026-03-19 20:54:03  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 20:54:08  INFO      oil_sentinel.market.poller  CL=F: $93.83  chg=-0.26%  z=-2.37 [ANOMALY]
+2026-03-19 20:54:08  INFO      oil_sentinel.market.poller  BZ=F: $102.02  chg=-0.01%  z=-2.09 [ANOMALY]
+2026-03-19 20:54:08  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 93.83000183105469, 'change_pct': -0.2551268890699657, 'zscore': -2.3675791571279134, 'is_anomaly': True}, 'BZ=F': {'price': 102.0199966430664, 'change_pct': -0.009803132755205233, 'zscore': -2.092330960302518, 'is_anomaly': True}}
