@@ -4,6 +4,19 @@ Real-time oil-market intelligence service. Monitors geopolitical news and crude 
 
 ---
 
+## Disclaimer
+
+**This software is for informational purposes only. It does not constitute financial advice, investment advice, trading advice, or any other type of advice.**
+
+- Nothing produced by this tool should be interpreted as a recommendation to buy, sell, or hold any financial instrument.
+- The authors and contributors are not financial advisors and accept no responsibility or liability for any trading or investment decisions made based on information provided by this software.
+- Market data, news scores, and alerts may be inaccurate, delayed, or incomplete. Past signals do not predict future price movements.
+- You use this software entirely at your own risk. The authors are not liable for any financial loss, direct or indirect, that may result from its use.
+
+See [LICENSE](LICENSE) for full terms.
+
+---
+
 ## What it does
 
 Three independent loops run concurrently:
