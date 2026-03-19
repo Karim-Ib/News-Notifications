@@ -1,0 +1,43 @@
+"""Database subpackage — re-exports the public API from models."""
+
+from oil_sentinel.db.models import (
+    get_connection,
+    transaction,
+    init_db,
+    url_hash,
+    title_hash_exists,
+    article_exists,
+    insert_article,
+    get_unscored_articles,
+    mark_article_scored,
+    insert_market_sample,
+    get_recent_prices,
+    latest_market_sample,
+    insert_alert,
+    mark_alert_sent,
+    last_sent_for_narrative,
+    get_unsent_alerts,
+    get_recent_narrative_keys,
+    narrative_exists_recent,
+)
+
+__all__ = [
+    "get_connection",
+    "transaction",
+    "init_db",
+    "url_hash",
+    "title_hash_exists",
+    "article_exists",
+    "insert_article",
+    "get_unscored_articles",
+    "mark_article_scored",
+    "insert_market_sample",
+    "get_recent_prices",
+    "latest_market_sample",
+    "insert_alert",
+    "mark_alert_sent",
+    "last_sent_for_narrative",
+    "get_unsent_alerts",
+    "get_recent_narrative_keys",
+    "narrative_exists_recent",
+]
