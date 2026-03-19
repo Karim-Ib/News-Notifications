@@ -1,0 +1,44 @@
+[database]
+path = oil_sentinel.db
+
+[gdelt]
+poll_interval_minutes = 15
+# GDELT 2.0 DOC API — no key required
+base_url = https://api.gdeltproject.org/api/v2/doc/doc
+# Max articles per query response
+max_records = 250
+# Minimum GDELT tone deviation from baseline to pass filter (absolute value)
+tone_threshold = 2.5
+# Pipe-separated list of actors/keywords for pre-filter
+actors = Iran,IRGC,Hormuz,Khamenei,Rouhani,Raisi,OPEC,Saudi Arabia
+keywords = oil,crude,tanker,sanctions,strait,blockade,attack,missile,drone,seizure,export,embargo
+
+[market]
+poll_interval_minutes = 5
+# yfinance tickers for WTI and Brent
+wti_ticker = CL=F
+brent_ticker = BZ=F
+# Rolling window (number of 5-min samples) for z-score baseline
+zscore_window = 288
+# Z-score threshold for anomaly flag
+zscore_threshold = 2.0
+
+[gemini]
+api_key = AIzaSyC2XlLWwO8mYlszVu5zPZSG74flpkg9_3c
+model = gemini-2.0-flash
+# Max articles sent to Gemini per scoring cycle
+batch_size = 5
+# Minimum GDELT relevance score to forward to Gemini (0-100)
+min_relevance = 60
+
+[telegram]
+bot_token = YOUR_TELEGRAM_BOT_TOKEN_HERE
+chat_id = YOUR_CHAT_ID_HERE
+# Cooldown in minutes before resending alert on same narrative thread
+cooldown_minutes = 60
+# Minimum composite score (news magnitude + market anomaly) to send alert
+alert_threshold = 3
+
+[logging]
+level = INFO
+file = oil_sentinel.log

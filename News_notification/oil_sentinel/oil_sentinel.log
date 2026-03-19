@@ -1,0 +1,320 @@
+2026-03-19 16:30:39  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 16:30:39  INFO      main  oil_sentinel starting � three loops launching
+2026-03-19 16:30:39  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 16:30:39  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 16:30:39  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 16:30:42  ERROR     gdelt  GDELT fetch error: 429, message='Too Many Requests', url='https://api.gdeltproject.org/api/v2/doc/doc?query=%22Iran%22+OR+%22Hormuz%22+OR+%22IRGC%22+OR+%22Iranian+oil%22+OR+%22Persian+Gulf%22+sourcecountry:US+OR+sourcecountry:UK+OR+sourcecountry:DE&mode=artlist&maxrecords=250&timespan=15m&format=json&sort=DateDesc'
+2026-03-19 16:30:42  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 16:30:42  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 16:30:42  INFO      market  CL=F: $96.39  chg=0.00%  z=0.00
+2026-03-19 16:30:42  INFO      market  BZ=F: $106.79  chg=0.00%  z=0.00
+2026-03-19 16:44:04  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 16:44:04  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 16:44:04  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 16:44:04  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 16:44:05  INFO      market  CL=F: $96.28  chg=-0.11%  z=0.00
+2026-03-19 16:44:05  INFO      market  BZ=F: $107.05  chg=0.24%  z=0.00
+2026-03-19 16:44:05  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 16:44:05  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 16:44:05  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:44:06  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 16:44:07  WARNING   scorer  JSON parse error from Gemini: Expecting value: line 1 column 38 (char 37) | raw: {"direction": "bullish", "magnitude":
+2026-03-19 16:44:07  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:44:09  WARNING   scorer  JSON parse error from Gemini: Expecting value: line 1 column 38 (char 37) | raw: {"direction": "bullish", "magnitude":
+2026-03-19 16:44:09  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:44:10  WARNING   scorer  JSON parse error from Gemini: Expecting value: line 1 column 38 (char 37) | raw: {"direction": "bearish", "magnitude":
+2026-03-19 16:44:10  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:44:12  WARNING   scorer  JSON parse error from Gemini: Expecting value: line 1 column 38 (char 37) | raw: {"direction": "bullish", "magnitude":
+2026-03-19 16:44:12  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:44:14  WARNING   scorer  JSON parse error from Gemini: Unterminated string starting at: line 1 column 26 (char 25) | raw: {"direction": "bearish", "magnitude
+2026-03-19 16:44:24  INFO      gdelt  GDELT: 36 articles passed pre-filter (from 250 raw)
+2026-03-19 16:44:24  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 16:44:24  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 16:47:05  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 16:47:05  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 16:47:05  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 16:47:05  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 16:47:05  INFO      market  CL=F: $96.66  chg=0.39%  z=0.00
+2026-03-19 16:47:05  INFO      market  BZ=F: $107.38  chg=0.31%  z=0.00
+2026-03-19 16:47:06  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 16:47:06  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 16:47:06  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:47:06  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 16:47:07  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 16:47:22  WARNING   gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 16:47:46  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:47:46  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 16:47:56  INFO      gdelt  GDELT: 36 articles passed pre-filter (from 250 raw)
+2026-03-19 16:47:56  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 16:47:56  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 16:48:26  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:48:26  ERROR     scorer  Gemini quota exhausted after 3 retries -- skipping article
+2026-03-19 16:48:26  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:48:26  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 16:49:06  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:49:06  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 16:51:21  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 16:51:21  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 16:51:21  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 16:51:21  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 16:51:21  INFO      market  CL=F: $96.86  chg=0.21%  z=0.00
+2026-03-19 16:51:21  INFO      market  BZ=F: $107.29  chg=-0.08%  z=0.00
+2026-03-19 16:51:22  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 16:51:22  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 16:51:22  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:51:25  INFO      scorer  Scored [iran_war_oil_price_k_shaped_economy] mag=3 conf=0.70 dir=bullish comp=2.10 | Iran war , oil price surge worsen K - shaped economy , say e
+2026-03-19 16:51:29  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:51:29  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil Prices Spike Again After Iran War Attacks | News / Talk 
+2026-03-19 16:51:32  INFO      gdelt  GDELT: 36 articles passed pre-filter (from 250 raw)
+2026-03-19 16:51:32  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 16:51:32  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 16:51:33  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:51:35  INFO      scorer  Scored [hormuz_security_effort] mag=2 conf=0.70 dir=neutral comp=1.40 | UAE Could Join US - Led Effort To Protect Ships In Strait Of
+2026-03-19 16:51:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:51:40  INFO      scorer  Scored [iran_gulf_strike] mag=4 conf=0.80 dir=bullish comp=3.20 | Iran strikes Gulf energy sites as Brent crude jumps
+2026-03-19 16:51:44  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:51:45  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 16:51:49  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 16:51:50  ERROR     telegram_bot  Telegram error: Bad Request: can't parse entities: Character '|' is reserved and must be escaped with the preceding '\'
+2026-03-19 16:51:50  WARNING   telegram_bot  Alert 2 send failed
+2026-03-19 16:51:50  ERROR     telegram_bot  Telegram error: Bad Request: can't parse entities: Character '|' is reserved and must be escaped with the preceding '\'
+2026-03-19 16:51:50  WARNING   telegram_bot  Alert 4 send failed
+2026-03-19 16:58:19  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 16:58:19  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 16:58:19  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 16:58:19  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 16:58:19  INFO      market  CL=F: $99.90  chg=3.14%  z=0.00
+2026-03-19 16:58:19  INFO      market  BZ=F: $106.53  chg=-0.71%  z=0.00
+2026-03-19 16:58:20  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 16:58:20  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 16:58:20  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:58:20  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 16:58:21  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil Prices Spike Again After Iran War Attacks | NewsRadio 63
+2026-03-19 16:58:25  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:58:26  INFO      scorer  Scored [iran_oil_sanctions_relief] mag=3 conf=0.70 dir=bearish comp=2.10 | Bessent says US aiming to unsanction Iran oil  on the water 
+2026-03-19 16:58:30  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:58:30  INFO      scorer  Scored [iran_war_asia_supply_crunch] mag=4 conf=0.80 dir=bullish comp=3.20 | Asia scrambles to conserve energy as Iran war disrupts oil a
+2026-03-19 16:58:34  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:58:36  INFO      scorer  Scored [iran_gulf_attack] mag=4 conf=0.80 dir=bullish comp=3.20 | Global fuel prices spike after Iran hits multiple Gulf oil a
+2026-03-19 16:58:38  INFO      gdelt  GDELT: 36 articles passed pre-filter (from 250 raw)
+2026-03-19 16:58:38  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 16:58:38  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 16:58:40  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 16:58:42  INFO      scorer  Scored [hormuz_diplomatic_statements] mag=1 conf=0.70 dir=neutral comp=0.70 | European countries and Japan issue joint statement on Strait
+2026-03-19 16:58:46  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 16:58:46  INFO      telegram_bot  Sent alert 8 [iran_war_asia_supply_crunch] composite=3.20 → msg_id=10
+2026-03-19 16:58:46  INFO      telegram_bot  Sent alert 9 [iran_gulf_attack] composite=3.20 → msg_id=11
+2026-03-19 16:58:46  INFO      scoring_loop  Sent 2 Telegram alerts
+2026-03-19 17:02:50  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:02:50  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:02:50  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:02:50  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:02:50  INFO      market  CL=F: $98.82  chg=-1.08%  z=1.06
+2026-03-19 17:02:50  INFO      market  BZ=F: $105.72  chg=-0.76%  z=-3.66 [ANOMALY]
+2026-03-19 17:02:51  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:02:51  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:02:51  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:02:51  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 98.81999969482422, 'change_pct': -1.0810828974561277, 'zscore': 1.0564366368345544, 'is_anomaly': False}, 'BZ=F': {'price': 105.72000122070312, 'change_pct': -0.7603469143671535, 'zscore': -3.6588535872627674, 'is_anomaly': True}}
+2026-03-19 17:02:52  INFO      scorer  Scored [iran_gulf_attack] mag=5 conf=0.90 dir=bullish comp=4.50 | Oil and natural gas prices soar as Iran attacks Gulf energy 
+2026-03-19 17:02:56  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:02:56  INFO      scorer  Scored [iran_gulf_attacks] mag=4 conf=0.80 dir=bullish comp=3.20 | Iran intensifies attacks on oil and gas facilities in the Gu
+2026-03-19 17:02:57  INFO      gdelt  GDELT: 36 articles passed pre-filter (from 250 raw)
+2026-03-19 17:02:57  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 17:02:57  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 17:03:00  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:03:01  INFO      scorer  Scored [us_spr_release] mag=3 conf=0.70 dir=bearish comp=2.10 | US may release more oil from reserve to push prices down ,  
+2026-03-19 17:03:05  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:03:06  INFO      scorer  Scored [israeli_attack_iran] mag=3 conf=0.70 dir=bullish comp=2.10 | Global selloff in stocks : oil hits $115 , Trump admits he  
+2026-03-19 17:03:10  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:03:11  INFO      scorer  Scored [iran_qatar_attack] mag=4 conf=0.80 dir=bullish comp=3.20 | BT EXPLAINER : Why Iran attack on Qatar Ras Laffan is terrib
+2026-03-19 17:03:15  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 17:03:15  INFO      telegram_bot  Sent batch of 2 alerts (ids=[12, 15]) -> msg_id=13
+2026-03-19 17:03:15  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 17:11:04  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:11:04  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:11:04  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:11:04  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:11:04  INFO      market  CL=F: $98.12  chg=-0.71%  z=0.42
+2026-03-19 17:11:04  INFO      market  BZ=F: $105.41  chg=-0.29%  z=-2.26 [ANOMALY]
+2026-03-19 17:11:05  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:11:05  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:11:05  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:11:05  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 98.12000274658203, 'change_pct': -0.7083555458448867, 'zscore': 0.421711871138198, 'is_anomaly': False}, 'BZ=F': {'price': 105.41000366210938, 'change_pct': -0.2932250804146257, 'zscore': -2.2570849844072436, 'is_anomaly': True}}
+2026-03-19 17:11:05  INFO      market_loop  Market anomaly alert sent
+2026-03-19 17:11:06  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 17:11:08  INFO      scorer  Scored [iran_conflict_escalation] mag=3 conf=0.70 dir=bullish comp=2.10 | Iran war underscores risks of Trump relentless focus on oil
+2026-03-19 17:11:12  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:11:13  INFO      scorer  Scored [hormuz_chokepoint_risk] mag=4 conf=0.70 dir=bullish comp=2.80 | U . S . Military Expert on Oil Tanker Convoys in the Strait 
+2026-03-19 17:11:17  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:11:19  INFO      scorer  Scored [iran_hormuz_conflict] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 17:11:23  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:11:23  WARNING   gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 17:11:24  INFO      scorer  Scored [us_sanctions_relief_consideration] mag=4 conf=0.80 dir=bearish comp=3.20 | US considers un - sanctioning Iran oil to mitigate global cr
+2026-03-19 17:11:28  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:11:29  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 17:11:33  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 17:11:33  INFO      telegram_bot  Sent batch of 2 alerts (ids=[18, 19]) -> msg_id=15
+2026-03-19 17:11:33  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 17:11:54  WARNING   gdelt  GDELT 429 rate-limited, retrying in 60s (attempt 3)
+2026-03-19 17:12:55  WARNING   gdelt  GDELT 429 rate-limited, retrying in 120s (attempt 4)
+2026-03-19 17:13:33  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:13:33  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:13:34  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.80 dir=bullish comp=4.20 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 17:13:38  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:13:38  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 17:14:18  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:14:19  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 17:14:55  ERROR     gdelt  GDELT fetch failed after all retries
+2026-03-19 17:14:55  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 17:14:55  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 17:14:59  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:14:59  ERROR     scorer  Gemini quota exhausted after 3 retries -- skipping article
+2026-03-19 17:14:59  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:14:59  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 17:15:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:15:39  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 17:16:05  INFO      market  CL=F: $97.44  chg=-0.69%  z=-0.10
+2026-03-19 17:16:05  INFO      market  BZ=F: $104.86  chg=-0.52%  z=-2.27 [ANOMALY]
+2026-03-19 17:16:05  WARNING   market_loop  Market anomaly detected: {'CL=F': {'price': 97.44000244140625, 'change_pct': -0.6930292357737106, 'zscore': -0.09725919807784658, 'is_anomaly': False}, 'BZ=F': {'price': 104.86000061035156, 'change_pct': -0.5217750048855337, 'zscore': -2.266646152259247, 'is_anomaly': True}}
+2026-03-19 17:16:19  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:16:19  ERROR     scorer  Gemini quota exhausted after 3 retries -- skipping article
+2026-03-19 17:16:19  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:16:19  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 17:16:59  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:16:59  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 17:17:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:17:39  ERROR     scorer  Gemini quota exhausted after 3 retries -- skipping article
+2026-03-19 17:17:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:17:40  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 17:18:20  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:18:20  WARNING   scorer  Gemini 429 (attempt 2/3), waiting 40s
+2026-03-19 17:19:00  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:19:00  ERROR     scorer  Gemini quota exhausted after 3 retries -- skipping article
+2026-03-19 17:19:00  INFO      scoring_loop  Scored 1 articles -> dispatching alerts
+2026-03-19 17:19:17  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:19:17  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:19:17  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:19:17  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:19:18  INFO      market  CL=F: $97.78  chg=0.35%  z=0.17
+2026-03-19 17:19:18  INFO      market  BZ=F: $105.04  chg=0.17%  z=-1.43
+2026-03-19 17:19:18  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:19:18  INFO      scorer  Scoring 2 articles with Gemini
+2026-03-19 17:19:18  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:19:18  WARNING   scorer  Gemini 429 (attempt 1/3), waiting 40s
+2026-03-19 17:19:19  WARNING   gdelt  GDELT JSON parse error: Expecting value: line 1 column 1 (char 0) | body[:200]: Your query was too short or too long.
+
+2026-03-19 17:19:19  INFO      gdelt  GDELT: 0 articles passed pre-filter (from 0 raw)
+2026-03-19 17:19:19  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 17:19:19  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 17:23:00  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:23:00  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:23:00  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:23:00  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:23:00  INFO      market  CL=F: $97.57  chg=-0.21%  z=-0.01
+2026-03-19 17:23:00  INFO      market  BZ=F: $104.87  chg=-0.16%  z=-1.38
+2026-03-19 17:23:01  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:23:01  INFO      scorer  Scoring 2 articles with Gemini
+2026-03-19 17:23:01  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:23:01  ERROR     scorer  Gemini DAILY quota exhausted -- scoring suspended until midnight PT. Marking article as skipped.
+2026-03-19 17:23:04  INFO      gdelt  GDELT: 39 articles passed pre-filter (from 250 raw)
+2026-03-19 17:23:18  INFO      gdelt  GDELT: 37 articles passed pre-filter (from 250 raw)
+2026-03-19 17:23:21  INFO      gdelt  GDELT poll: 47 new articles stored
+2026-03-19 17:23:21  INFO      news_loop  GDELT poll done: 47 new articles
+2026-03-19 17:28:33  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:28:33  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:28:33  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:28:33  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:28:33  INFO      market  CL=F: $98.37  chg=0.82%  z=0.69
+2026-03-19 17:28:33  INFO      market  BZ=F: $105.67  chg=0.76%  z=-0.41
+2026-03-19 17:28:34  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:28:34  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:28:34  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:28:34  WARNING   scorer  Gemini RPM 429 (attempt 1/3), waiting 40s
+2026-03-19 17:28:35  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 17:28:53  INFO      gdelt  GDELT: 37 articles passed pre-filter (from 250 raw)
+2026-03-19 17:29:10  INFO      gdelt  GDELT: 37 articles passed pre-filter (from 250 raw)
+2026-03-19 17:29:13  INFO      gdelt  GDELT poll: 0 new articles stored
+2026-03-19 17:29:13  INFO      news_loop  GDELT poll done: 0 new articles
+2026-03-19 17:29:14  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:29:14  WARNING   scorer  Gemini RPM 429 (attempt 2/3), waiting 40s
+2026-03-19 17:29:54  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:29:55  ERROR     scorer  Gemini RPM quota exhausted after 3 retries -- skipping article
+2026-03-19 17:29:55  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:29:55  WARNING   scorer  Gemini RPM 429 (attempt 1/3), waiting 40s
+2026-03-19 17:47:59  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:47:59  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:47:59  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:47:59  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:48:00  INFO      market  CL=F: $98.41  chg=0.04%  z=0.68
+2026-03-19 17:48:00  INFO      market  BZ=F: $106.60  chg=0.88%  z=0.56
+2026-03-19 17:48:00  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:48:00  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:48:00  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:48:01  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 17:48:03  WARNING   scorer  JSON parse error from Gemini: Expecting property name enclosed in double quotes: line 1 column 60 (char 59) | raw: {"direction": "neutral", "magnitude": 1, "confidence": 0.9,
+2026-03-19 17:48:03  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:48:06  WARNING   scorer  JSON parse error from Gemini: Expecting property name enclosed in double quotes: line 1 column 60 (char 59) | raw: {"direction": "bullish", "magnitude": 4, "confidence": 0.9,
+2026-03-19 17:48:06  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:48:10  WARNING   scorer  JSON parse error from Gemini: Expecting ',' delimiter: line 1 column 57 (char 56) | raw: {"direction": "bearish", "magnitude": 3, "confidence": 0.
+2026-03-19 17:48:10  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:48:13  WARNING   scorer  JSON parse error from Gemini: Expecting ',' delimiter: line 1 column 57 (char 56) | raw: {"direction": "bullish", "magnitude": 3, "confidence": 0.
+2026-03-19 17:48:13  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:48:16  WARNING   scorer  JSON parse error from Gemini: Expecting property name enclosed in double quotes: line 1 column 60 (char 59) | raw: {"direction": "bullish", "magnitude": 4, "confidence": 0.9,
+2026-03-19 17:48:17  WARNING   gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 17:53:32  INFO      main  Database initialised at oil_sentinel.db
+2026-03-19 17:53:32  INFO      main  oil_sentinel starting -- three loops launching
+2026-03-19 17:53:32  INFO      news_loop  News loop started (interval=900s)
+2026-03-19 17:53:32  INFO      market_loop  Market loop started (interval=300s)
+2026-03-19 17:53:33  INFO      market  CL=F: $97.44  chg=-0.99%  z=-0.26
+2026-03-19 17:53:33  INFO      market  BZ=F: $105.84  chg=-0.71%  z=-0.28
+2026-03-19 17:53:33  INFO      scoring_loop  Scoring loop started (interval=120s)
+2026-03-19 17:53:33  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:53:33  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:53:34  WARNING   gdelt  GDELT 429 rate-limited, retrying in 15s (attempt 1)
+2026-03-19 17:53:35  INFO      scorer  Scored [hormuz_security_cooperation] mag=2 conf=0.80 dir=bearish comp=1.60 | European allies and Japan signal readiness to help secure St
+2026-03-19 17:53:39  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:53:40  INFO      scorer  Scored [iran_retaliation_threat] mag=4 conf=0.80 dir=bullish comp=3.20 | Oil may reach US$120 a barrel if Iran hits 5 key facilities 
+2026-03-19 17:53:44  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:53:45  INFO      scorer  Scored [qatar_lng_plant_attack] mag=5 conf=0.95 dir=bullish comp=4.75 | Energy prices surge after Iran attack on Qatar LNG plant thr
+2026-03-19 17:53:49  WARNING   gdelt  GDELT 429 rate-limited, retrying in 30s (attempt 2)
+2026-03-19 17:53:49  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:53:50  INFO      scorer  Scored [iran_oil_historical_context] mag=1 conf=0.80 dir=neutral comp=0.80 | The West has long characterized Iran oil as a prize to be cl
+2026-03-19 17:53:54  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:53:55  INFO      scorer  Scored [japan_us_hormuz_talks] mag=2 conf=0.80 dir=bearish comp=1.60 | Japan Prime Minister to meet Trump as he pushes for help in 
+2026-03-19 17:53:59  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 17:54:00  INFO      telegram_bot  Sent batch of 2 alerts (ids=[24, 23]) -> msg_id=16
+2026-03-19 17:54:00  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 17:54:24  INFO      gdelt  GDELT: 42 articles passed pre-filter (from 250 raw)
+2026-03-19 17:54:37  INFO      gdelt  GDELT: 39 articles passed pre-filter (from 250 raw)
+2026-03-19 17:54:45  INFO      gdelt  GDELT poll: 20 new articles stored
+2026-03-19 17:54:45  INFO      news_loop  GDELT poll done: 20 new articles
+2026-03-19 17:56:00  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:56:00  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:56:01  INFO      scorer  Scored [iran_targets_saudi_port] mag=4 conf=0.90 dir=bullish comp=3.60 | Iran Targets Saudi Port Seen as Alternative to Strait of Hor
+2026-03-19 17:56:05  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:56:07  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.90 dir=bullish comp=3.60 | Oil Prices Spike Again After Iran War Attacks | NewsRadio 91
+2026-03-19 17:56:11  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:56:12  INFO      scorer  Scored [japan_hormuz_diplomacy] mag=2 conf=0.80 dir=bearish comp=1.60 | Japan Prime Minister to meet Trump as he pushes for help in 
+2026-03-19 17:56:16  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:56:18  INFO      scorer  Scored [bushehr_plant_strike] mag=4 conf=0.80 dir=bullish comp=3.20 | Rosatom Plans Major Evacuation from Iran Bushehr Nuclear Pla
+2026-03-19 17:56:22  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:56:23  INFO      scorer  Scored [hormuz_security_cooperation] mag=2 conf=0.80 dir=bearish comp=1.60 | European allies and Japan signal readiness to help secure St
+2026-03-19 17:56:27  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 17:56:27  INFO      telegram_bot  Sent batch of 2 alerts (ids=[27, 30]) -> msg_id=17
+2026-03-19 17:56:27  INFO      scoring_loop  Sent 1 Telegram alerts
+2026-03-19 17:58:27  INFO      scorer  Scoring 5 articles with Gemini
+2026-03-19 17:58:27  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:58:28  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.90 dir=bullish comp=3.60 | Oil Prices Spike Again After Iran War Attacks | NewsRadio 80
+2026-03-19 17:58:32  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:58:33  INFO      market  CL=F: $97.24  chg=-0.21%  z=-0.44
+2026-03-19 17:58:33  INFO      market  BZ=F: $105.78  chg=-0.06%  z=-0.33
+2026-03-19 17:58:34  INFO      scorer  Scored [un_hormuz_reopening_call] mag=2 conf=0.80 dir=bearish comp=1.60 | UN chief urges US and Israel to end the war , Iran to stop a
+2026-03-19 17:58:38  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:58:39  INFO      scorer  Scored [iran_gulf_refinery_strikes] mag=5 conf=0.90 dir=bullish comp=4.50 | Oil and gas prices surge as Iran escalates strikes on Gulf r
+2026-03-19 17:58:43  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:58:44  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.90 dir=bullish comp=3.60 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 17:58:48  INFO      google_genai.models  AFC is enabled with max remote calls: 10.
+2026-03-19 17:58:49  INFO      scorer  Scored [iran_war_attacks] mag=4 conf=0.90 dir=bullish comp=3.60 | Oil Prices Spike Again After Iran War Attacks
+2026-03-19 17:58:53  INFO      scoring_loop  Scored 5 articles -> dispatching alerts
+2026-03-19 17:58:54  INFO      telegram_bot  Sent batch of 1 alerts (ids=[34]) -> msg_id=18
+2026-03-19 17:58:54  INFO      scoring_loop  Sent 1 Telegram alerts
