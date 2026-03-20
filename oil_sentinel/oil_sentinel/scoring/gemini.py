@@ -54,16 +54,44 @@ OUTPUT a JSON object with EXACTLY these fields:
                     9   = major event, >6% move expected
                     10  = historic / structural market shift
                   Be granular — use the full range. Reserve 9-10 for genuine crises.
-  confidence    : float 0.0-1.0 — your certainty that this event will move prices
-                  as scored. Factor in source credibility:
-                    0.9-1.0 = tier-1 wires (Reuters, Bloomberg, AP, FT, WSJ)
-                    0.7-0.8 = established regional press, Al Jazeera, BBC, major nationals
-                    0.5-0.6 = trade press, aggregators, unverified social/blog sources
-                    downgrade further if the article is speculative, uses hedged language
-                    ("may", "could", "reportedly"), or contradicts other known reporting
+  confidence    : float 0.0-1.0 — two-step calculation, output the final value.
+
+                  STEP 1 — source credibility baseline:
+                    0.85-1.00 = tier-1 wires: Reuters, Bloomberg, AP, FT, WSJ,
+                                Al Jazeera, BBC
+                    0.65-0.80 = established press: CNBC, Guardian, NYT, major nationals
+                    0.45-0.60 = trade press, regional outlets, aggregators
+                                (oilprice.com, rigzone.com, hellenicshippingnews.com, etc.)
+                    0.20-0.40 = blogs, unknown sources, unverified, no byline
+
+                  STEP 2 — multiply by certainty factor:
+                    × 1.0 = confirmed event, named official sources, on-record quotes
+                    × 0.7 = hedged language ("may", "could", "reportedly",
+                            "sources say", "is expected to", "according to unnamed")
+                    × 0.5 = speculation, opinion piece, analyst forecast,
+                            unverified claim, single unnamed source
+
+                  EXAMPLES (source baseline × certainty = final):
+                    Reuters confirmed strike, named officials  → 0.90 × 1.0 = 0.90
+                    Bloomberg "sources say" ceasefire talks    → 0.90 × 0.7 = 0.63
+                    oilprice.com confirmed OPEC cut            → 0.50 × 1.0 = 0.50
+                    regional site, "may close" Hormuz          → 0.50 × 0.7 = 0.35
+                    unknown blog speculating about supply       → 0.30 × 0.5 = 0.15
+
+                  NEVER output 0.70 as a default. Every article needs a reasoned value.
   event_type    : one label from the taxonomy below
-  narrative_key : lowercase snake_case slug <=30 chars, consistent across
-                  follow-up articles on the same story thread
+  narrative_key : lowercase snake_case slug <=30 chars.
+                  Use SPECIFIC event details — never generic conflict labels.
+                    GOOD: "saudi_180_oil_price_warning"
+                          "houthi_bab_el_mandeb_threat"
+                          "iran_hormuz_closure_drill"
+                          "opec_march_output_cut"
+                    BAD:  "iran_conflict_escalation"
+                          "middle_east_oil_tension"
+                          "iran_israel_conflict"
+                          "oil_market_disruption"
+                  For follow-up articles on the SAME specific event reuse the
+                  EXACT key. Different events with the same actors get different keys.
   summary       : <=120 chars, present-tense factual headline
   detail        : exactly 2 sentences:
                     [1] which supply/demand/flow mechanism is affected and how
@@ -111,7 +139,9 @@ USER_TEMPLATE = (
     "Active narrative threads (reuse the EXACT key if this article is a follow-up):\n"
     "{narrative_context}\n\n"
     "Score this article. Remember: diplomatic/deal/ceasefire articles are bearish. "
-    "Military/seizure/sanction articles are bullish. Apply the bias check."
+    "Military/seizure/sanction articles are bullish. Apply the bias check. "
+    "Use a specific narrative_key (actor + action + context, not generic labels). "
+    "Calculate confidence as source_baseline × certainty_factor — do not default to 0.70."
 )
 
 _MAX_RETRIES = 3
