@@ -10,10 +10,12 @@ Design decisions:
 - truncates to MAX_BODY_CHARS before returning to keep Gemini prompts bounded
 """
 
+import gzip
 import logging
 import socket
 import urllib.error
 import urllib.request
+import zlib
 from typing import Optional
 
 import trafilatura
@@ -32,9 +34,22 @@ _HEADERS = {
     "User-Agent":      USER_AGENT,
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
+    "Accept-Encoding": "identity",   # ask for uncompressed — urllib doesn't auto-decompress
     "Connection":      "close",
 }
+
+
+def _decompress(raw: bytes, content_encoding: str) -> bytes:
+    """Decompress response body if the server sent it compressed anyway."""
+    enc = content_encoding.lower()
+    try:
+        if "gzip" in enc:
+            return gzip.decompress(raw)
+        if "deflate" in enc:
+            return zlib.decompress(raw)
+    except Exception:
+        pass
+    return raw
 
 
 def fetch_article_text(url: str) -> Optional[str]:
@@ -50,22 +65,39 @@ def fetch_article_text(url: str) -> Optional[str]:
     This function is synchronous and intended for use inside
     asyncio.to_thread() / loop.run_in_executor().
     """
+    logger.info("Extractor: fetching %s", url)
+
+    html: Optional[str] = None
     try:
         req = urllib.request.Request(url, headers=_HEADERS)
         with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-            if resp.status != 200:
-                logger.debug("Extractor: HTTP %d for %s", resp.status, url)
+            status = resp.status
+            content_encoding = resp.headers.get("Content-Encoding", "")
+            raw = resp.read(2_097_152)
+            raw = _decompress(raw, content_encoding)
+            content_len = len(raw)
+            html = raw.decode("utf-8", errors="replace")
+            logger.info(
+                "Extractor: HTTP %d  content_length=%d bytes  encoding=%r  url=%s",
+                status, content_len, content_encoding or "none", url,
+            )
+            if status != 200:
+                logger.warning("Extractor: non-200 status %d — skipping  url=%s", status, url)
                 return None
-            # Read up to 2 MB — enough for any article, avoids huge pages
-            html = resp.read(2_097_152).decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
-        logger.debug("Extractor: HTTP error %d for %s", exc.code, url)
+        logger.warning("Extractor: HTTP error %d  url=%s", exc.code, url)
         return None
-    except (urllib.error.URLError, socket.timeout, OSError) as exc:
-        logger.debug("Extractor: fetch failed for %s: %s", url, exc)
+    except urllib.error.URLError as exc:
+        logger.warning("Extractor: URL error (%s)  url=%s", exc.reason, url)
+        return None
+    except socket.timeout:
+        logger.warning("Extractor: timed out after %ds  url=%s", FETCH_TIMEOUT, url)
+        return None
+    except OSError as exc:
+        logger.warning("Extractor: OS error (%s)  url=%s", exc, url)
         return None
     except Exception as exc:
-        logger.debug("Extractor: unexpected error for %s: %s", url, exc)
+        logger.warning("Extractor: unexpected fetch error (%s: %s)  url=%s", type(exc).__name__, exc, url)
         return None
 
     try:
@@ -77,10 +109,16 @@ def fetch_article_text(url: str) -> Optional[str]:
             favor_precision=True,
         )
     except Exception as exc:
-        logger.debug("Extractor: trafilatura error for %s: %s", url, exc)
+        logger.warning("Extractor: trafilatura raised %s: %s  url=%s", type(exc).__name__, exc, url)
         return None
 
     if not text or not text.strip():
+        preview = html[:200].encode("ascii", errors="replace").decode("ascii")
+        logger.warning(
+            "Extractor: trafilatura returned None  html_preview=%r  url=%s",
+            preview, url,
+        )
         return None
 
+    logger.info("Extractor: extracted %d chars  url=%s", len(text), url)
     return text[:MAX_BODY_CHARS]
