@@ -14,10 +14,11 @@ from typing import Optional
 
 import aiohttp
 
-from oil_sentinel.charts import generate_price_chart
+from oil_sentinel.charts import generate_price_chart, generate_price_narrative_chart
 from oil_sentinel.db import (
     get_active_watches_for_ticker,
     get_connection,
+    get_narrative_history,
     get_price_history,
     get_unsent_alerts,
     last_sent_for_narrative,
@@ -425,16 +426,14 @@ async def _send_price_chart(
     session: aiohttp.ClientSession,
     bot_token: str,
     chat_id: str,
+    hours: int = 24,
     alert_markers: Optional[list[tuple[datetime, str]]] = None,
     caption: str = "",
 ) -> None:
-    """
-    Fetch 24h WTI price history, generate chart, send to Telegram.
-    Silently skips if there is insufficient data or if chart generation fails.
-    """
+    """Fetch WTI price history, generate price chart, send to Telegram."""
     conn = get_connection(db_path)
     try:
-        prices = get_price_history(conn, "CL=F", hours=24)
+        prices = get_price_history(conn, "CL=F", hours=hours)
     finally:
         conn.close()
 
@@ -445,6 +444,70 @@ async def _send_price_chart(
     chart_bytes = generate_price_chart(prices, alert_markers=alert_markers)
     if not chart_bytes:
         logger.debug("Price chart generation returned None")
+        return
+
+    await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
+
+
+async def _send_narrative_chart(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    hours: int = 168,
+    alert_markers: Optional[list[tuple[datetime, str]]] = None,
+    caption: str = "",
+) -> None:
+    """Fetch price + narrative history, generate price-vs-narrative chart, send to Telegram."""
+    conn = get_connection(db_path)
+    try:
+        prices     = get_price_history(conn, "CL=F", hours=hours)
+        narratives = get_narrative_history(conn, hours=hours)
+    finally:
+        conn.close()
+
+    if len(prices) < 3:
+        logger.debug("Narrative chart skipped: only %d price samples available", len(prices))
+        return
+
+    chart_bytes = generate_price_narrative_chart(
+        prices, narratives, alert_markers=alert_markers
+    )
+    if not chart_bytes:
+        logger.debug("Narrative chart generation returned None")
+        return
+
+    await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
+
+
+async def _send_narrative_chart(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    hours: int = 168,
+    alert_markers: Optional[list[tuple[datetime, str]]] = None,
+    caption: str = "",
+) -> None:
+    """
+    Fetch 7-day WTI price and narrative history, generate two-panel chart, send to Telegram.
+    Falls back to the plain price chart if narrative data is unavailable.
+    Silently skips on insufficient data.
+    """
+    conn = get_connection(db_path)
+    try:
+        prices     = get_price_history(conn, "CL=F", hours=hours)
+        narratives = get_narrative_history(conn, hours=hours)
+    finally:
+        conn.close()
+
+    if len(prices) < 3:
+        logger.debug("Narrative chart skipped: only %d price samples available", len(prices))
+        return
+
+    chart_bytes = generate_narrative_chart(prices, narratives, alert_markers=alert_markers)
+    if not chart_bytes:
+        logger.debug("Narrative chart generation returned None")
         return
 
     await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
@@ -474,11 +537,19 @@ async def send_narrative_transition_alert(
         chart_direction = "neutral"
 
     now_utc = datetime.now(timezone.utc)
-    caption = f"📊 WTI 24h  •  Narrative shift: {STATE_LABELS.get(narrative.get('previous_state',''), '?')} → {STATE_LABELS.get(new_state, new_state)}"
+    prev_label = STATE_LABELS.get(narrative.get("previous_state", ""), "?")
+    curr_label = STATE_LABELS.get(new_state, new_state)
+
     await _send_price_chart(
         db_path, session, bot_token, chat_id,
+        hours=24,
         alert_markers=[(now_utc, chart_direction)],
-        caption=caption,
+        caption=f"📊 WTI 24h  •  Shift: {prev_label} → {curr_label}",
+    )
+    await _send_narrative_chart(
+        db_path, session, bot_token, chat_id,
+        hours=168,
+        caption=f"📊 7d price vs narrative  •  {prev_label} → {curr_label}",
     )
 
     text = _format_narrative_transition(narrative, wti_price)

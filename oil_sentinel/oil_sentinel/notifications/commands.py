@@ -26,12 +26,13 @@ except ImportError:  # pragma: no cover — only on very old Python builds
 
 import aiohttp
 
-from oil_sentinel.charts import generate_price_chart
+from oil_sentinel.charts import generate_price_chart, generate_price_narrative_chart
 from oil_sentinel.db import (
     deactivate_all_watches,
     deactivate_watch,
     get_active_watches,
     get_connection,
+    get_narrative_history,
     get_price_history,
     get_recently_sent_alerts,
     get_watch_by_id,
@@ -61,7 +62,7 @@ TICKER_ALIASES: dict[str, str] = {
 
 # Add new public commands here. /shutdown_bot is intentionally absent.
 BOT_COMMANDS: list[tuple[str, str]] = [
-    ("chart",     "WTI 24h price chart with recent alert markers"),
+    ("chart",     "WTI price+narrative chart. /chart [days 1–30, default 7]"),
     ("status",    "Narrative state, live WTI price & anomaly flag"),
     ("watch",     "Set a price alert  e.g. /watch wti below 85 Entry"),
     ("watches",   "List all active price watches"),
@@ -153,8 +154,15 @@ async def _cmd_chart(
     bot_token: str,
     chat_id: str,
     state,
+    args: Optional[list[str]] = None,
 ) -> None:
-    """Send WTI 24h chart. Enforces a per-request cooldown."""
+    """
+    Send WTI price/narrative chart. Enforces a per-request cooldown.
+
+    /chart          — 7-day price + narrative sentiment chart (default)
+    /chart 1        — 24h intraday price chart
+    /chart <days>   — multi-day narrative chart, 2–30 days
+    """
     now = datetime.now(timezone.utc)
 
     # Rate limit
@@ -168,15 +176,37 @@ async def _cmd_chart(
             )
             return
 
+    # Parse optional days argument
+    days = 7
+    if args:
+        try:
+            days = max(1, min(30, int(args[0])))
+        except (ValueError, TypeError):
+            await send_message(
+                session, bot_token, chat_id,
+                "⚠️ Usage: <code>/chart [days]</code>  where days is 1–30\n"
+                "Examples: <code>/chart</code>  (7d default)  ·  <code>/chart 1</code>  (24h intraday)",
+            )
+            return
+
     state.last_chart_request = now
+    hours = days * 24
 
     conn = get_connection(db_path)
     try:
-        prices  = get_price_history(conn, "CL=F", hours=24)
-        sent    = get_recently_sent_alerts(conn, hours=24)
-        latest  = latest_market_sample(conn, "CL=F")
+        prices     = get_price_history(conn, "CL=F", hours=hours)
+        sent       = get_recently_sent_alerts(conn, hours=hours)
+        latest     = latest_market_sample(conn, "CL=F")
+        narratives = get_narrative_history(conn, hours=hours) if days > 1 else []
     finally:
         conn.close()
+
+    if len(prices) < 3:
+        await send_message(
+            session, bot_token, chat_id,
+            "⚠️ Not enough price history yet — market loop needs a few samples first.",
+        )
+        return
 
     markers = []
     for row in sent:
@@ -187,25 +217,38 @@ async def _cmd_chart(
         except (ValueError, TypeError):
             pass
 
-    if len(prices) < 3:
-        await send_message(
-            session, bot_token, chat_id,
-            "⚠️ Not enough price history yet — market loop needs a few samples first.",
-        )
-        return
-
     price_str = f"WTI ${float(latest['price']):.2f}" if latest else "WTI n/a"
     n_markers = len(markers)
-    caption = (
-        f"📊 {price_str}  •  "
-        f"{n_markers} alert marker{'s' if n_markers != 1 else ''} (24h)"
-    )
+    days_str  = f"{days}d" if days > 1 else "24h"
 
-    chart_bytes = generate_price_chart(prices, alert_markers=markers or None)
-    if chart_bytes:
-        await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
+    price_caption = (
+        f"📊 {price_str}  •  {days_str}  •  "
+        f"{n_markers} alert{'s' if n_markers != 1 else ''}"
+    )
+    price_bytes = generate_price_chart(
+        prices,
+        alert_markers=markers or None,
+        title=f"WTI Crude  ·  {days_str}",
+    )
+    if price_bytes:
+        await send_photo(session, bot_token, chat_id, price_bytes, caption=price_caption)
     else:
-        await send_message(session, bot_token, chat_id, "⚠️ Chart generation failed.")
+        await send_message(session, bot_token, chat_id, "⚠️ Price chart generation failed.")
+
+    if days > 1:
+        narrative_bytes = generate_price_narrative_chart(
+            prices, narratives,
+            alert_markers=markers or None,
+            title=f"Price vs Narrative  ·  {days_str}",
+        )
+        if narrative_bytes:
+            await send_photo(
+                session, bot_token, chat_id, narrative_bytes,
+                caption=f"📊 Price vs narrative  •  {days_str}",
+            )
+        else:
+            await send_message(session, bot_token, chat_id,
+                               "⚠️ Not enough narrative history yet.")
 
 
 async def _cmd_status(
@@ -627,13 +670,23 @@ async def _cmd_shutdown(
     session: aiohttp.ClientSession,
     bot_token: str,
     chat_id: str,
+    update_id: int,
 ) -> None:
-    """Send confirmation then exit the process."""
+    """
+    Send confirmation, acknowledge the update with Telegram, then exit.
+
+    The acknowledgement step (getUpdates with offset=update_id+1) is critical:
+    without it Telegram keeps the /shutdown_bot update queued and replays it
+    on every restart, causing an immediate re-shutdown loop.
+    """
     logger.warning("Shutdown requested via Telegram by chat %s", chat_id)
     await send_message(
         session, bot_token, chat_id,
         "🔴 <b>Shutting down Oil Sentinel.</b>",
     )
+    # Acknowledge this update so Telegram won't re-deliver it on next startup
+    await get_updates(session, bot_token, offset=update_id + 1, timeout=0)
+    logger.info("Shutdown update acknowledged (offset=%d)", update_id + 1)
     sys.exit(0)
 
 
@@ -670,10 +723,11 @@ async def handle_update(
     if command not in _ROUTABLE:
         return
 
+    update_id: int = update.get("update_id", 0)
     logger.info("Command received: %s %s from chat %s", command, args, chat_id_incoming)
 
     if command == "/chart":
-        await _cmd_chart(db_path, session, bot_token, allowed_chat_id, state)
+        await _cmd_chart(db_path, session, bot_token, allowed_chat_id, state, args)
     elif command == "/status":
         await _cmd_status(db_path, session, bot_token, allowed_chat_id, state)
     elif command == "/watch":
@@ -693,4 +747,4 @@ async def handle_update(
     elif command == "/help":
         await send_message(session, bot_token, allowed_chat_id, _HELP_TEXT)
     elif command == "/shutdown_bot":
-        await _cmd_shutdown(session, bot_token, allowed_chat_id)
+        await _cmd_shutdown(session, bot_token, allowed_chat_id, update_id)

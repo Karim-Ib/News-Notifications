@@ -536,6 +536,29 @@ def insert_narrative_state(
     return cursor.lastrowid
 
 
+def get_narrative_history(
+    conn: sqlite3.Connection,
+    hours: int = 168,
+) -> list[tuple[datetime, float, str]]:
+    """Return (utc_datetime, weighted_score, state) tuples for the last N hours, oldest first."""
+    rows = conn.execute(
+        """
+        SELECT computed_at, weighted_score, state FROM narrative_states
+        WHERE computed_at >= datetime('now', ? || ' hours')
+        ORDER BY computed_at ASC
+        """,
+        (f"-{hours}",),
+    ).fetchall()
+    result = []
+    for r in rows:
+        try:
+            ts = datetime.fromisoformat(r["computed_at"]).replace(tzinfo=timezone.utc)
+            result.append((ts, float(r["weighted_score"]), str(r["state"])))
+        except (ValueError, TypeError):
+            pass
+    return result
+
+
 def get_latest_narrative_state(conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM narrative_states ORDER BY computed_at DESC LIMIT 1"

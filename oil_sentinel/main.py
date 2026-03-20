@@ -397,7 +397,18 @@ async def command_loop(cfg: Config, session: aiohttp.ClientSession, state: State
 
     logger.info("Command loop started (long-polling Telegram)")
     await register_commands(session, cfg.telegram.bot_token)
-    offset = 0
+
+    # Drain any updates that arrived (or were unacknowledged) while the bot
+    # was offline — including stale /shutdown_bot commands.
+    stale = await get_updates(session, cfg.telegram.bot_token, offset=0, timeout=0)
+    if stale:
+        offset = stale[-1]["update_id"] + 1
+        logger.warning(
+            "Drained %d stale Telegram update(s) on startup (skipped to offset %d)",
+            len(stale), offset,
+        )
+    else:
+        offset = 0
 
     while True:
         try:

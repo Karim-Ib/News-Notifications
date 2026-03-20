@@ -284,7 +284,7 @@ The bot responds to slash commands sent directly in the configured Telegram chat
 
 | Command | Response |
 |---|---|
-| `/chart` | WTI 24h price chart with markers for every alert sent in the last 24h (60s cooldown) |
+| `/chart` | WTI 7-day price+narrative chart (default). `/chart 1` for 24h intraday. `/chart <days>` for 1–30 days. 60s cooldown. |
 | `/status` | Narrative state, live WTI price + z-score, anomaly flag, active mode, timezone |
 | `/watch wti below 85 Entry` | Set a price alert — fires once when WTI crosses $85 |
 | `/watch brent above 95` | Set a Brent alert with no label |
@@ -348,6 +348,20 @@ At `morning_summary_hour` (local time), a concise briefing covering all signals 
 ---
 
 ## Telegram message format
+
+### Charts (/chart command)
+
+`/chart` sends **two separate images** in sequence:
+
+**Image 1 — Clean price chart**
+WTI price line with alert dispatch times as coloured dashed verticals (▲ red = bullish, ▼ green = bearish, ● amber = anomaly). Legend shows directions present in the window.
+
+**Image 2 — Price vs narrative chart**
+Same price line, but with coloured background shading showing the active narrative state. State transitions are marked with a dotted vertical line and a directional arrow: ▲▲ strong escalation · ▲ escalation · → stable · ▼ de-escalation · ▼▼ strong de-escalation. This lets you directly see whether narrative shifts correlate with price movements. Legend lists all states present in the window.
+
+`/chart 1` sends only the clean price chart (24h intraday). Narrative transition alerts send both charts automatically (clean 24h + 7d price-vs-narrative).
+
+---
 
 ### Immediate alert
 ```
