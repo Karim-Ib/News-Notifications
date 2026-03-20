@@ -27,9 +27,13 @@ from oil_sentinel.ingestion import poll_and_store as gdelt_poll
 from oil_sentinel.market import poll_and_store as market_poll, any_anomaly
 from oil_sentinel.narrative import evaluate_narrative
 from oil_sentinel.notifications import (
+    check_price_watches,
     dispatch_alerts,
     dispatch_digest,
     dispatch_morning_summary,
+    get_updates,
+    handle_update,
+    register_commands,
     send_market_alert,
     send_narrative_transition_alert,
 )
@@ -66,13 +70,49 @@ def setup_logging(level: str, log_file: str) -> None:
 # Idle mode helpers
 # ---------------------------------------------------------------------------
 
-def _is_overnight(cfg: Config, now: datetime) -> bool:
-    """Return True if the current UTC hour falls in the configured overnight window."""
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _ZONEINFO_AVAILABLE = True
+except ImportError:
+    _ZoneInfo = None  # type: ignore
+    _ZONEINFO_AVAILABLE = False
+
+
+def _current_hour(state) -> int:
+    """
+    Return the current hour in the active timezone.
+    Respects state.idle_tz if set; falls back to server local time.
+    """
+    tz_name = getattr(state, "idle_tz", None) if state else None
+    if tz_name and _ZONEINFO_AVAILABLE:
+        try:
+            return datetime.now(_ZoneInfo(tz_name)).hour
+        except Exception:
+            pass
+    return datetime.now().hour
+
+
+def _is_overnight(cfg: Config, state=None) -> bool:
+    """
+    Return True when the overnight/idle window is active.
+
+    Priority:
+      1. state.idle_manual = True/False  → manual override, ignores schedule
+      2. cfg.idle.enabled = False        → always normal
+      3. Time window check using state.idle_tz or server local time
+    """
+    # Manual override set via /idle on|off
+    if state is not None and state.idle_manual is not None:
+        return state.idle_manual
+
     if not cfg.idle.enabled:
         return False
-    h = now.hour
+
+    h = _current_hour(state)
     s, e = cfg.idle.overnight_start, cfg.idle.overnight_end
-    if s > e:  # window crosses midnight, e.g. 22 → 09
+    if s == e:                     # degenerate window — treat as disabled
+        return False
+    if s > e:                      # crosses midnight, e.g. 22 → 09
         return h >= s or h < e
     return s <= h < e
 
@@ -85,26 +125,49 @@ class State:
     def __init__(self) -> None:
         self.market_anomaly: bool = False
         self.last_market_alert: Optional[datetime] = None
-        self.sent_digests: set = set()  # (date, hour) tuples already dispatched
-        self.narrative: dict = {}       # latest narrative evaluation result
+        self.sent_digests: set = set()   # (date, hour) tuples already dispatched
+        self.narrative: dict = {}        # latest narrative evaluation result
+        self.overnight: Optional[bool] = None   # tracks mode for transition logging
+        # Idle control (set via /idle commands)
+        self.idle_manual: Optional[bool] = None  # None=auto, True=force idle, False=force normal
+        self.idle_tz: Optional[str] = None       # None=server local; e.g. "Europe/Berlin"
+        # Rate limiting
+        self.last_chart_request: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
 # Polling loops
 # ---------------------------------------------------------------------------
 
-async def news_loop(cfg: Config, session: aiohttp.ClientSession) -> None:
+async def news_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
     """Poll GDELT every N minutes (slower during overnight idle window)."""
     logger = logging.getLogger("news_loop")
     logger.info(
         "News loop started (interval=%dm, idle=%s, overnight=%s)",
         cfg.gdelt.poll_interval_minutes,
         cfg.idle.enabled,
-        f"{cfg.idle.overnight_start:02d}:00-{cfg.idle.overnight_end:02d}:00 UTC" if cfg.idle.enabled else "n/a",
+        f"{cfg.idle.overnight_start:02d}:00-{cfg.idle.overnight_end:02d}:00 local" if cfg.idle.enabled else "n/a",
     )
     while True:
-        now = datetime.now(timezone.utc)
-        overnight = _is_overnight(cfg, now)
+        overnight = _is_overnight(cfg, state)
+
+        # Log mode transitions
+        if state.overnight is None:
+            logger.info("Initial mode: %s", "overnight/idle" if overnight else "normal")
+            state.overnight = overnight
+        elif overnight != state.overnight:
+            if overnight:
+                logger.info(
+                    "Switching to overnight/idle mode (poll interval %dm)",
+                    cfg.idle.poll_interval_minutes,
+                )
+            else:
+                logger.info(
+                    "Returning to normal mode (poll interval %dm)",
+                    cfg.gdelt.poll_interval_minutes,
+                )
+            state.overnight = overnight
+
         interval_min = cfg.idle.poll_interval_minutes if overnight else cfg.gdelt.poll_interval_minutes
         interval = interval_min * 60
 
@@ -132,7 +195,7 @@ async def market_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
     logger.info("Market loop started (interval=%ds)", interval)
     loop = asyncio.get_running_loop()
     while True:
-        if _is_overnight(cfg, datetime.now(timezone.utc)):
+        if _is_overnight(cfg, state):
             state.market_anomaly = False
             await asyncio.sleep(60)  # wake up every minute to re-check if overnight ended
             continue
@@ -157,9 +220,19 @@ async def market_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
                     or now - state.last_market_alert > timedelta(minutes=cfg.telegram.cooldown_minutes)
                 ):
                     if cfg.telegram.bot_token and cfg.telegram.bot_token != "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-                        await send_market_alert(session, cfg.telegram.bot_token, cfg.telegram.chat_id, results)
+                        await send_market_alert(cfg.db_path, session, cfg.telegram.bot_token, cfg.telegram.chat_id, results)
                         state.last_market_alert = now
                         logger.info("Market anomaly alert sent")
+
+            # Check price watches on every fresh poll (anomaly or not)
+            if results and cfg.telegram.bot_token and cfg.telegram.bot_token != "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+                fired = await check_price_watches(
+                    cfg.db_path, results, session,
+                    bot_token=cfg.telegram.bot_token,
+                    chat_id=cfg.telegram.chat_id,
+                )
+                if fired:
+                    logger.info("%d price watch(es) triggered this poll", fired)
         except Exception as exc:
             logger.exception("Market loop error: %s", exc)
         await asyncio.sleep(interval)
@@ -209,7 +282,7 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
             )
             state.narrative = narrative
 
-            overnight = _is_overnight(cfg, datetime.now(timezone.utc))
+            overnight = _is_overnight(cfg, state)
 
             # Narrative transition: highest-priority signal, bypasses all cooldowns
             # Only send during active hours (not overnight) to avoid noise
@@ -262,11 +335,11 @@ async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
     )
 
     while True:
-        now = datetime.now(timezone.utc)
+        now = datetime.now()  # local server time
         current_date = now.date()
         current_hour = now.hour
 
-        # Morning summary (idle mode only) — fires at overnight_end hour (e.g. 09:00)
+        # Morning summary — fires at overnight_end hour (e.g. 09:00 local time)
         if cfg.idle.enabled:
             morning_hour = cfg.idle.morning_summary_hour
             morning_key = ("morning", current_date, morning_hour)
@@ -285,8 +358,8 @@ async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
                 except Exception as exc:
                     logger.exception("Morning summary error: %s", exc)
 
-        # Regular daytime digests — skip during overnight window in idle mode
-        if not _is_overnight(cfg, now):
+        # Regular daytime digests — skip during overnight window
+        if not _is_overnight(cfg, state):
             for hour in digest_hours:
                 key = ("digest", current_date, hour)
                 if current_hour >= hour and key not in state.sent_digests:
@@ -311,6 +384,41 @@ async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
 
 
 # ---------------------------------------------------------------------------
+# Bot command loop
+# ---------------------------------------------------------------------------
+
+async def command_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
+    """Long-poll Telegram for incoming commands (/chart, /status, /help)."""
+    logger = logging.getLogger("command_loop")
+
+    if not cfg.telegram.bot_token or cfg.telegram.bot_token == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+        logger.warning("Telegram bot token not configured — command loop disabled")
+        return
+
+    logger.info("Command loop started (long-polling Telegram)")
+    await register_commands(session, cfg.telegram.bot_token)
+    offset = 0
+
+    while True:
+        try:
+            updates = await get_updates(session, cfg.telegram.bot_token, offset=offset)
+            for update in updates:
+                offset = update["update_id"] + 1
+                await handle_update(
+                    update,
+                    db_path=cfg.db_path,
+                    session=session,
+                    bot_token=cfg.telegram.bot_token,
+                    allowed_chat_id=cfg.telegram.chat_id,
+                    state=state,
+                    cfg=cfg,
+                )
+        except Exception as exc:
+            logger.exception("Command loop error: %s", exc)
+            await asyncio.sleep(10)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -329,10 +437,11 @@ async def main() -> None:
     async with aiohttp.ClientSession(connector=connector) as session:
         logger.info("oil_sentinel starting -- three loops launching")
         await asyncio.gather(
-            news_loop(cfg, session),
+            news_loop(cfg, session, state),
             market_loop(cfg, session, state),
             scoring_loop(cfg, session, state),
             digest_loop(cfg, session, state),
+            command_loop(cfg, session, state),
         )
 
 

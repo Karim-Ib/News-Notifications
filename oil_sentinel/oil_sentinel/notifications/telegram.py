@@ -14,13 +14,18 @@ from typing import Optional
 
 import aiohttp
 
+from oil_sentinel.charts import generate_price_chart
 from oil_sentinel.db import (
+    get_active_watches_for_ticker,
     get_connection,
+    get_price_history,
     get_unsent_alerts,
     last_sent_for_narrative,
+    latest_market_sample,
     mark_alert_sent,
     mark_narrative_transition_alerted,
     transaction,
+    trigger_watch,
 )
 from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 
@@ -385,6 +390,66 @@ async def send_message(
         return None
 
 
+async def send_photo(
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    photo_bytes: bytes,
+    caption: str = "",
+) -> Optional[int]:
+    """Upload a PNG to Telegram. Returns message_id or None on failure."""
+    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+    form = aiohttp.FormData()
+    form.add_field("chat_id", str(chat_id))
+    form.add_field(
+        "photo", photo_bytes,
+        filename="wti_chart.png",
+        content_type="image/png",
+    )
+    if caption:
+        form.add_field("caption", caption[:1024])
+    try:
+        async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            data = await resp.json()
+            if data.get("ok"):
+                return data["result"]["message_id"]
+            logger.error("Telegram sendPhoto error: %s", data.get("description"))
+            return None
+    except aiohttp.ClientError as exc:
+        logger.error("Telegram sendPhoto failed: %s", exc)
+        return None
+
+
+async def _send_price_chart(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    alert_markers: Optional[list[tuple[datetime, str]]] = None,
+    caption: str = "",
+) -> None:
+    """
+    Fetch 24h WTI price history, generate chart, send to Telegram.
+    Silently skips if there is insufficient data or if chart generation fails.
+    """
+    conn = get_connection(db_path)
+    try:
+        prices = get_price_history(conn, "CL=F", hours=24)
+    finally:
+        conn.close()
+
+    if len(prices) < 3:
+        logger.debug("Price chart skipped: only %d samples available", len(prices))
+        return
+
+    chart_bytes = generate_price_chart(prices, alert_markers=alert_markers)
+    if not chart_bytes:
+        logger.debug("Price chart generation returned None")
+        return
+
+    await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
+
+
 async def send_narrative_transition_alert(
     db_path: str,
     session: aiohttp.ClientSession,
@@ -399,6 +464,23 @@ async def send_narrative_transition_alert(
     Marks the state record as alerted in DB on success.
     Returns True on success.
     """
+    # Determine dominant direction of the new narrative state for the marker color
+    new_state = narrative.get("state", "")
+    if "escalation" in new_state and "de_" not in new_state:
+        chart_direction = "bullish"
+    elif "de_escalation" in new_state:
+        chart_direction = "bearish"
+    else:
+        chart_direction = "neutral"
+
+    now_utc = datetime.now(timezone.utc)
+    caption = f"📊 WTI 24h  •  Narrative shift: {STATE_LABELS.get(narrative.get('previous_state',''), '?')} → {STATE_LABELS.get(new_state, new_state)}"
+    await _send_price_chart(
+        db_path, session, bot_token, chat_id,
+        alert_markers=[(now_utc, chart_direction)],
+        caption=caption,
+    )
+
     text = _format_narrative_transition(narrative, wti_price)
     msg_id = await send_message(session, bot_token, chat_id, text)
     if msg_id:
@@ -421,12 +503,30 @@ async def send_narrative_transition_alert(
 
 
 async def send_market_alert(
+    db_path: str,
     session: aiohttp.ClientSession,
     bot_token: str,
     chat_id: str,
     poll_results: dict,
 ) -> Optional[int]:
-    """Send a standalone market-anomaly alert. Returns message_id or None."""
+    """Send a standalone market-anomaly alert with price chart. Returns message_id or None."""
+    now_utc = datetime.now(timezone.utc)
+
+    # Build a caption showing which tickers spiked
+    anomaly_tickers = []
+    for ticker, data in poll_results.items():
+        if data.get("is_anomaly"):
+            label = "WTI" if "CL" in ticker else "Brent" if "BZ" in ticker else ticker
+            chg = data.get("change_pct") or 0.0
+            anomaly_tickers.append(f"{label} {chg:+.2f}%")
+    caption = "🚨 Market anomaly: " + "  •  ".join(anomaly_tickers) if anomaly_tickers else "🚨 Market anomaly detected"
+
+    await _send_price_chart(
+        db_path, session, bot_token, chat_id,
+        alert_markers=[(now_utc, "neutral")],
+        caption=caption,
+    )
+
     text = _format_market_alert(poll_results)
     msg_id = await send_message(session, bot_token, chat_id, text)
     if msg_id:
@@ -486,6 +586,34 @@ async def dispatch_alerts(
             return 0
 
         qualifying.sort(key=lambda a: a.get("magnitude") or 0, reverse=True)
+
+        # Build chart markers from alert creation timestamps
+        chart_markers = []
+        for alert in qualifying:
+            direction = alert.get("direction") or "neutral"
+            raw_ts = alert.get("created_at") or ""
+            try:
+                ts = datetime.fromisoformat(raw_ts).replace(tzinfo=timezone.utc)
+                chart_markers.append((ts, direction))
+            except (ValueError, TypeError):
+                chart_markers.append((now, direction))
+
+        wti_price_str = ""
+        conn2 = get_connection(db_path)
+        try:
+            row = latest_market_sample(conn2, "CL=F")
+            if row:
+                wti_price_str = f"  •  WTI ${float(row['price']):.2f}"
+        finally:
+            conn2.close()
+
+        caption = f"📊 WTI 24h{wti_price_str}  •  {len(qualifying)} alert{'s' if len(qualifying) != 1 else ''} firing"
+        await _send_price_chart(
+            db_path, session, bot_token, chat_id,
+            alert_markers=chart_markers,
+            caption=caption,
+        )
+
         messages = _batch_messages(qualifying, narrative_state=narrative_state)
         last_msg_id = None
         failed = False
@@ -539,12 +667,6 @@ async def dispatch_morning_summary(
             reverse=True,
         )
 
-        messages = _pack_messages(
-            _format_morning_summary(alerts, top_n=top_n),
-            [],   # summary is already fully formatted, no per-entry packing needed
-            "",
-        )
-        # _format_morning_summary returns a single string — just send it directly
         text = _format_morning_summary(alerts, top_n=top_n)
         msg_id = await send_message(session, bot_token, chat_id, text)
 
@@ -614,3 +736,89 @@ async def dispatch_digest(
             return 0
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Price watch alert
+# ---------------------------------------------------------------------------
+
+# Shared ticker → human label mapping (also used by commands.py)
+TICKER_LABELS: dict[str, str] = {
+    "CL=F": "WTI",
+    "BZ=F": "Brent",
+}
+
+
+def _format_watch_alert(watch: dict, current_price: float) -> str:
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ticker_label = TICKER_LABELS.get(watch["ticker"], watch["ticker"])
+    direction = watch["direction"]
+    target = watch["target_price"]
+    label = watch.get("label") or ""
+    label_str = f"  —  {_h(label)}" if label else ""
+
+    return (
+        f"\U0001f3af <b>PRICE WATCH TRIGGERED</b>  \u00b7  <i>{now_str}</i>\n"
+        f"{SEP}\n"
+        f"<b>{_h(ticker_label)}</b> {_h(direction)} <b>${target:.2f}</b>{label_str}\n"
+        f"Current: <b>${current_price:.2f}</b>"
+    )
+
+
+async def check_price_watches(
+    db_path: str,
+    poll_results: dict,
+    session: aiohttp.ClientSession,
+    *,
+    bot_token: str,
+    chat_id: str,
+) -> int:
+    """
+    Check active price watches against fresh poll results.
+    Sends an alert and deactivates each watch that has been triggered.
+    Returns the number of watches fired.
+    """
+    if not poll_results:
+        return 0
+
+    conn = get_connection(db_path)
+    fired = 0
+    try:
+        for ticker, data in poll_results.items():
+            current_price = data.get("price")
+            if current_price is None:
+                continue
+
+            watches = get_active_watches_for_ticker(conn, ticker)
+            for watch in watches:
+                watch = dict(watch)
+                target = watch["target_price"]
+                direction = watch["direction"]
+
+                triggered = (
+                    (direction == "above" and current_price >= target) or
+                    (direction == "below" and current_price <= target)
+                )
+                if not triggered:
+                    continue
+
+                text = _format_watch_alert(watch, current_price)
+                msg_id = await send_message(session, bot_token, chat_id, text)
+                if msg_id:
+                    with transaction(conn):
+                        trigger_watch(conn, watch["id"])
+                    ticker_label = TICKER_LABELS.get(ticker, ticker)
+                    logger.info(
+                        "Price watch #%d triggered: %s %s $%.2f (current $%.2f)",
+                        watch["id"], ticker_label, direction, target, current_price,
+                    )
+                    fired += 1
+                else:
+                    logger.warning(
+                        "Price watch #%d alert failed to send — will retry next poll",
+                        watch["id"],
+                    )
+    finally:
+        conn.close()
+
+    return fired

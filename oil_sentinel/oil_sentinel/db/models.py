@@ -6,7 +6,7 @@ Tables: articles, market_data, alerts
 import hashlib
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -106,6 +106,19 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 CREATE INDEX IF NOT EXISTS idx_alerts_narrative  ON alerts(narrative_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_alerts_sent       ON alerts(sent_at);
+
+CREATE TABLE IF NOT EXISTS price_watches (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker       TEXT    NOT NULL,
+    direction    TEXT    NOT NULL CHECK(direction IN ('above', 'below')),
+    target_price REAL    NOT NULL,
+    label        TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    triggered_at TEXT,
+    active       INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_watches_active ON price_watches(active, ticker);
 """
 
 
@@ -114,28 +127,6 @@ def init_db(db_path: str) -> None:
     conn = get_connection(db_path)
     with transaction(conn):
         conn.executescript(SCHEMA)
-
-        # Migration: add narrative_states table if absent (added later)
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "narrative_states" not in tables:
-            conn.executescript("""
-                CREATE TABLE narrative_states (
-                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                    state            TEXT    NOT NULL,
-                    previous_state   TEXT,
-                    weighted_score   REAL    NOT NULL,
-                    momentum         TEXT    NOT NULL,
-                    bull_count       INTEGER NOT NULL DEFAULT 0,
-                    bear_count       INTEGER NOT NULL DEFAULT 0,
-                    neutral_count    INTEGER NOT NULL DEFAULT 0,
-                    avg_bull_mag     REAL,
-                    avg_bear_mag     REAL,
-                    key_driver_ids   TEXT,
-                    computed_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-                    transition_alerted INTEGER NOT NULL DEFAULT 0
-                );
-                CREATE INDEX IF NOT EXISTS idx_narrative_computed ON narrative_states(computed_at);
-            """)
 
         # Migration: add title_hash column to articles if absent
         article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -308,6 +299,31 @@ def get_recent_prices(
     return [r["price"] for r in reversed(rows)]
 
 
+def get_price_history(
+    conn: sqlite3.Connection,
+    ticker: str,
+    hours: int = 24,
+) -> list[tuple[datetime, float]]:
+    """Return (utc_datetime, price) pairs for the last N hours, oldest first."""
+    rows = conn.execute(
+        """
+        SELECT sampled_at, price FROM market_data
+        WHERE ticker = ?
+          AND sampled_at >= datetime('now', ? || ' hours')
+        ORDER BY sampled_at ASC
+        """,
+        (ticker, f"-{hours}"),
+    ).fetchall()
+    result = []
+    for r in rows:
+        try:
+            ts = datetime.fromisoformat(r["sampled_at"]).replace(tzinfo=timezone.utc)
+            result.append((ts, float(r["price"])))
+        except (ValueError, TypeError):
+            pass
+    return result
+
+
 def latest_market_sample(
     conn: sqlite3.Connection, ticker: str
 ) -> Optional[sqlite3.Row]:
@@ -456,6 +472,21 @@ def last_sent_for_narrative(
     return row["sent_at"] if row else None
 
 
+def get_recently_sent_alerts(
+    conn: sqlite3.Connection, hours: int = 24
+) -> list[sqlite3.Row]:
+    """Return alerts dispatched within the last N hours, oldest first."""
+    return conn.execute(
+        """
+        SELECT direction, sent_at FROM alerts
+        WHERE sent_at IS NOT NULL
+          AND sent_at >= datetime('now', ? || ' hours')
+        ORDER BY sent_at ASC
+        """,
+        (f"-{hours}",),
+    ).fetchall()
+
+
 def get_unsent_alerts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
@@ -515,4 +546,81 @@ def mark_narrative_transition_alerted(conn: sqlite3.Connection, state_id: int) -
     conn.execute(
         "UPDATE narrative_states SET transition_alerted = 1 WHERE id = ?",
         (state_id,),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Price watches CRUD
+# ---------------------------------------------------------------------------
+
+def insert_watch(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    direction: str,
+    target_price: float,
+    label: Optional[str] = None,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO price_watches (ticker, direction, target_price, label)
+        VALUES (?, ?, ?, ?)
+        """,
+        (ticker, direction, target_price, label or None),
+    )
+    return cursor.lastrowid
+
+
+def get_active_watches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Return all active watches, ordered by creation time."""
+    return conn.execute(
+        "SELECT * FROM price_watches WHERE active = 1 ORDER BY created_at ASC"
+    ).fetchall()
+
+
+def get_active_watches_for_ticker(
+    conn: sqlite3.Connection, ticker: str
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM price_watches WHERE active = 1 AND ticker = ?",
+        (ticker,),
+    ).fetchall()
+
+
+def get_watch_by_id(
+    conn: sqlite3.Connection, watch_id: int
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM price_watches WHERE id = ?", (watch_id,)
+    ).fetchone()
+
+
+def trigger_watch(conn: sqlite3.Connection, watch_id: int) -> None:
+    """Mark a watch as fired: set triggered_at and deactivate."""
+    conn.execute(
+        "UPDATE price_watches SET active = 0, triggered_at = datetime('now') WHERE id = ?",
+        (watch_id,),
+    )
+
+
+def deactivate_watch(conn: sqlite3.Connection, watch_id: int) -> None:
+    """Manually deactivate a watch (user /unwatch) without setting triggered_at."""
+    conn.execute(
+        "UPDATE price_watches SET active = 0 WHERE id = ?",
+        (watch_id,),
+    )
+
+
+def deactivate_all_watches(conn: sqlite3.Connection) -> int:
+    """Deactivate all active watches. Returns count removed."""
+    cursor = conn.execute("UPDATE price_watches SET active = 0 WHERE active = 1")
+    return cursor.rowcount
+
+
+def update_watch_price(
+    conn: sqlite3.Connection, watch_id: int, new_price: float
+) -> None:
+    conn.execute(
+        "UPDATE price_watches SET target_price = ? WHERE id = ?",
+        (new_price, watch_id),
     )

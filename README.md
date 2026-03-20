@@ -24,11 +24,12 @@ Three independent loops run concurrently:
 | Loop | Interval | What it does |
 |---|---|---|
 | **News** | 15 min (90 min overnight) | Polls GDELT for Iran/Hormuz/OPEC articles, pre-filters, deduplicates, stores |
-| **Market** | 5 min (paused overnight) | Fetches WTI & Brent futures prices, computes rolling z-scores, flags anomalies |
+| **Market** | 5 min (paused overnight) | Fetches WTI & Brent futures prices, computes rolling z-scores, flags anomalies, checks price watches |
 | **Scoring** | 2 min | Sends unscored articles to Gemini, creates alerts in DB, recomputes narrative state |
-| **Dispatch** | every 2 min (paused overnight) | Sends qualifying alerts to Telegram immediately |
-| **Digest** | 12:00 & 20:00 UTC | Summarises all sub-threshold signals accumulated since last digest |
-| **Morning summary** | 09:00 UTC (idle mode only) | Concise top-7 overnight briefing covering all signals since 22:00 |
+| **Dispatch** | every 2 min (paused overnight) | Sends qualifying alerts to Telegram immediately; attaches 24h price chart |
+| **Commands** | continuous (long-poll) | Receives and handles slash commands from the configured Telegram chat |
+| **Digest** | 12:00 & 20:00 local | Summarises all sub-threshold signals accumulated since last digest |
+| **Morning summary** | 09:00 local (idle mode) | Concise top-7 overnight briefing covering all signals since 22:00 |
 
 ### Alert logic
 
@@ -46,6 +47,8 @@ If a market price anomaly (z-score ≥ 2.0) coincides with scoring, the composit
 
 Long batches are automatically split across multiple Telegram messages (4096-char limit per message).
 
+Every immediate alert, market anomaly, and narrative transition also sends a **WTI 24h price chart** as an image, with vertical markers showing exactly when each alert fired. Bullish markers are red (▲ supply risk), bearish markers are green (▼ supply relief), and market anomaly markers are amber (●).
+
 ### Deduplication
 
 The system runs a three-layer dedup pipeline to prevent the same story appearing multiple times a day:
@@ -55,7 +58,7 @@ The system runs a three-layer dedup pipeline to prevent the same story appearing
 | **URL hash** | Ingestion | Exact URL SHA-256 — never stores the same article twice |
 | **Title hash** | Ingestion | First 8 normalised words of title — blocks near-identical headlines within 24h |
 | **Narrative context** | Scoring | Recent narrative keys are injected into the Gemini prompt so it reuses the exact same key for follow-up coverage of the same story |
-| **Jaccard similarity** | Scoring | Before creating an alert, word-overlap between the new `narrative_key` and all keys from the last 12h is computed — ≥60% overlap blocks the alert as a duplicate |
+| **Jaccard similarity** | Scoring | Before creating an alert, word-overlap between the new `narrative_key` and all keys from the last 12h is computed — ≥75% overlap blocks the alert as a duplicate; a direction flip on the same thread bypasses the block |
 | **Dispatch cooldown** | Dispatch | Same `narrative_key` cannot be re-sent for 6 hours even if a new alert slips through |
 
 ---
@@ -78,13 +81,18 @@ oil_sentinel/
 │   ├── narrative/
 │   │   ├── __init__.py
 │   │   └── engine.py          # 48h rolling sentiment state, momentum, key drivers, transition detection
+│   ├── charts/
+│   │   ├── __init__.py
+│   │   └── price_chart.py     # Matplotlib WTI intraday chart generator
 │   ├── scoring/
 │   │   ├── __init__.py
 │   │   └── gemini.py          # Gemini AI article scoring
 │   └── notifications/
 │       ├── __init__.py
-│       └── telegram.py        # Alert formatting + Telegram dispatch (including narrative transitions)
+│       ├── telegram.py        # Alert formatting + Telegram dispatch (including narrative transitions)
+│       └── commands.py        # Interactive bot commands (long-polling getUpdates)
 ├── main.py                    # Async orchestrator — run this
+├── diagnostics.py             # CLI for inspecting DB stats and Gemini prompt previews
 ├── config.ini                 # Your local config (not committed)
 ├── config.ini.example         # Template
 ├── pyproject.toml
@@ -102,6 +110,8 @@ git clone <repo-url>
 cd oil_sentinel
 pip install -r requirements.txt
 ```
+
+Dependencies: `aiohttp`, `yfinance`, `google-genai`, `trafilatura`, `matplotlib`, `tzdata` (for timezone support on Windows).
 
 ### 2. Configure
 
@@ -159,14 +169,14 @@ bot_token = ...                 # Required
 chat_id = ...                   # Required (group/channel ID, e.g. -100xxxxxxxxx)
 cooldown_minutes = 360          # Min gap before re-alerting on same story thread (6h)
 alert_threshold = 7             # Min magnitude (0-10) for immediate alert
-digest_hours = 12,20            # UTC hours to send the background signal digest
+digest_hours = 12,20            # Local server time hours to send the background signal digest
 
 [idle]
-enabled = false                 # Set to true to activate overnight idle mode
-overnight_start = 22            # UTC hour: alerts suppressed, market polling paused
-overnight_end = 9               # UTC hour: overnight window ends, morning summary fires
+enabled = true                  # Overnight idle mode — switches automatically, no manual toggle
+overnight_start = 22            # Local server time hour: alerts suppressed, market polling paused
+overnight_end = 9               # Local server time hour: window ends, morning summary fires
 poll_interval_minutes = 90      # GDELT poll interval during overnight window
-morning_summary_hour = 9        # UTC hour for the overnight briefing (match overnight_end)
+morning_summary_hour = 9        # Local server time hour for the overnight briefing (match overnight_end)
 ```
 
 ---
@@ -262,8 +272,78 @@ SQLite with WAL mode. Four tables:
 - **`market_data`** — 5-min price samples with z-scores
 - **`alerts`** — scored signals with dispatch state (`sent_at = NULL` until sent)
 - **`narrative_states`** — full history of computed narrative states, including weighted score, momentum, counts, and `transition_alerted` flag
+- **`price_watches`** — user-defined price triggers (`active=0` once fired or manually removed)
 
 Schema migrations run automatically on startup.
+
+---
+
+## Bot commands
+
+The bot responds to slash commands sent directly in the configured Telegram chat. No webhook or extra infrastructure is needed — it uses Telegram's long-polling `getUpdates` API, running as a fifth async loop alongside the monitoring loops.
+
+| Command | Response |
+|---|---|
+| `/chart` | WTI 24h price chart with markers for every alert sent in the last 24h (60s cooldown) |
+| `/status` | Narrative state, live WTI price + z-score, anomaly flag, active mode, timezone |
+| `/watch wti below 85 Entry` | Set a price alert — fires once when WTI crosses $85 |
+| `/watch brent above 95` | Set a Brent alert with no label |
+| `/watches` | List all active price watches |
+| `/unwatch 1` | Remove watch #1 |
+| `/unwatch all` | Remove all active watches |
+| `/editwatch 1 88.50` | Change watch #1's target price (was $85 → now $88.50) |
+| `/idle` | Show idle mode status and subcommands |
+| `/idle on` | Force idle mode immediately (suspends automatic schedule) |
+| `/idle off` | Force normal mode immediately (suspends automatic schedule) |
+| `/idle auto` | Return to automatic time-based switching |
+| `/idle tz Europe/Berlin` | Set the timezone used for the overnight window (returns to auto) |
+| `/idle tz local` | Revert to server local time |
+| `/help` | Command list |
+
+Commands are registered with Telegram on startup via `setMyCommands`, so they appear as autocomplete suggestions when you type `/` in the chat. They are silently ignored if sent from any chat other than the configured `chat_id`.
+
+To add a new command, edit the `BOT_COMMANDS` list in `notifications/commands.py` — the `/help` text, the autocomplete list, and the allowed-command guard all derive from that single list automatically.
+
+---
+
+## Diagnostics CLI
+
+`diagnostics.py` lets you inspect the database and preview exactly what Gemini receives without running a full scoring cycle.
+
+```bash
+# Extraction success rates by source, body text length distribution, recent failures
+python diagnostics.py stats
+
+# Preview the Gemini prompt for the most recent unscored article
+python diagnostics.py prompt
+
+# Preview for a specific article ID
+python diagnostics.py prompt --id 42
+
+# List recent articles with their IDs, scoring status, and body text availability
+python diagnostics.py prompt --list
+```
+
+The `prompt` subcommand renders the exact system + user prompt that would be sent to Gemini, including the current narrative thread context from the database.
+
+---
+
+## Idle / overnight mode
+
+When `[idle] enabled = true`, the system automatically switches modes based on local server time:
+
+| Mode | Hours | Behaviour |
+|---|---|---|
+| **Normal** | `overnight_end` → `overnight_start` | All loops run at full frequency |
+| **Overnight / idle** | `overnight_start` → `overnight_end` | GDELT polls every 90 min; market polling paused; no immediate alerts |
+
+Mode switches are detected automatically every polling cycle — no restart or manual toggle needed. Transitions are logged:
+```
+Switching to overnight/idle mode (poll interval 90m)
+Returning to normal mode (poll interval 15m)
+```
+
+At `morning_summary_hour` (local time), a concise briefing covering all signals accumulated during the night is sent to Telegram.
 
 ---
 

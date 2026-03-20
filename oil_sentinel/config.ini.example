@@ -43,19 +43,19 @@ chat_id = YOUR_CHAT_ID_HERE
 cooldown_minutes = 360
 # Minimum magnitude (0-10) for an immediate alert; signals below this go into the digest
 alert_threshold = 7
-# UTC hours to send the twice-daily digest of sub-threshold signals
+# Local server time hours to send the twice-daily digest of sub-threshold signals
 digest_hours = 12,20
 
 [idle]
-# Set enabled = true to activate overnight idle mode
-enabled = false
-# UTC hour when overnight window starts (markets close, alerts suppressed)
+# Set enabled = true to activate overnight idle mode (automatic — no manual toggle needed)
+enabled = true
+# Local server time hour when overnight window starts (markets close, alerts suppressed)
 overnight_start = 22
-# UTC hour when overnight window ends and morning summary fires
+# Local server time hour when overnight window ends and morning summary fires
 overnight_end = 9
 # GDELT poll interval (minutes) during the overnight window
 poll_interval_minutes = 90
-# UTC hour for the morning summary message (should match overnight_end)
+# Local server time hour for the morning summary message (should match overnight_end)
 morning_summary_hour = 9
 
 [logging]

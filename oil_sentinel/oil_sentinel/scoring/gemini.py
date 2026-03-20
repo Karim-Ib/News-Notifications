@@ -36,7 +36,7 @@ from oil_sentinel.ingestion.extractor import fetch_article_text
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = """\>
 You are a neutral crude-oil market analyst. Your job is to score news articles \
 for their directional impact on oil prices. You must be equally rigorous for \
 bullish AND bearish signals — do not default to bullish.
