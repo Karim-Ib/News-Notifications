@@ -37,6 +37,24 @@ def transaction(conn: sqlite3.Connection):
 # ---------------------------------------------------------------------------
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS narrative_states (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    state            TEXT    NOT NULL,   -- strong_escalation | escalation | stable | de_escalation | strong_de_escalation
+    previous_state   TEXT,               -- NULL on first record
+    weighted_score   REAL    NOT NULL,   -- signed mean sentiment score
+    momentum         TEXT    NOT NULL,   -- strengthening | weakening | stable
+    bull_count       INTEGER NOT NULL DEFAULT 0,
+    bear_count       INTEGER NOT NULL DEFAULT 0,
+    neutral_count    INTEGER NOT NULL DEFAULT 0,
+    avg_bull_mag     REAL,
+    avg_bear_mag     REAL,
+    key_driver_ids   TEXT,               -- JSON array of alert IDs (top 3)
+    computed_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    transition_alerted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_narrative_computed ON narrative_states(computed_at);
+
 CREATE TABLE IF NOT EXISTS articles (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     url_hash      TEXT    NOT NULL UNIQUE,          -- SHA-256 of canonical URL
@@ -95,6 +113,28 @@ def init_db(db_path: str) -> None:
     conn = get_connection(db_path)
     with transaction(conn):
         conn.executescript(SCHEMA)
+
+        # Migration: add narrative_states table if absent (added later)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "narrative_states" not in tables:
+            conn.executescript("""
+                CREATE TABLE narrative_states (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    state            TEXT    NOT NULL,
+                    previous_state   TEXT,
+                    weighted_score   REAL    NOT NULL,
+                    momentum         TEXT    NOT NULL,
+                    bull_count       INTEGER NOT NULL DEFAULT 0,
+                    bear_count       INTEGER NOT NULL DEFAULT 0,
+                    neutral_count    INTEGER NOT NULL DEFAULT 0,
+                    avg_bull_mag     REAL,
+                    avg_bear_mag     REAL,
+                    key_driver_ids   TEXT,
+                    computed_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+                    transition_alerted INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_narrative_computed ON narrative_states(computed_at);
+            """)
 
         # Migration: add title_hash column to articles if absent
         article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -381,3 +421,51 @@ def get_unsent_alerts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         ORDER BY al.created_at ASC
         """
     ).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Narrative state CRUD
+# ---------------------------------------------------------------------------
+
+def insert_narrative_state(
+    conn: sqlite3.Connection,
+    *,
+    state: str,
+    previous_state: Optional[str],
+    weighted_score: float,
+    momentum: str,
+    bull_count: int,
+    bear_count: int,
+    neutral_count: int,
+    avg_bull_mag: Optional[float],
+    avg_bear_mag: Optional[float],
+    key_driver_ids: str,  # JSON array string
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO narrative_states
+            (state, previous_state, weighted_score, momentum,
+             bull_count, bear_count, neutral_count,
+             avg_bull_mag, avg_bear_mag, key_driver_ids)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            state, previous_state, weighted_score, momentum,
+            bull_count, bear_count, neutral_count,
+            avg_bull_mag, avg_bear_mag, key_driver_ids,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def get_latest_narrative_state(conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM narrative_states ORDER BY computed_at DESC LIMIT 1"
+    ).fetchone()
+
+
+def mark_narrative_transition_alerted(conn: sqlite3.Connection, state_id: int) -> None:
+    conn.execute(
+        "UPDATE narrative_states SET transition_alerted = 1 WHERE id = ?",
+        (state_id,),
+    )

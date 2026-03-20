@@ -19,6 +19,9 @@ from oil_sentinel.db.models import (
     get_unsent_alerts,
     get_recent_narrative_keys,
     narrative_exists_recent,
+    insert_narrative_state,
+    get_latest_narrative_state,
+    mark_narrative_transition_alerted,
 )
 
 __all__ = [
@@ -40,4 +43,7 @@ __all__ = [
     "get_unsent_alerts",
     "get_recent_narrative_keys",
     "narrative_exists_recent",
+    "insert_narrative_state",
+    "get_latest_narrative_state",
+    "mark_narrative_transition_alerted",
 ]

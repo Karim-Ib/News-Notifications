@@ -22,10 +22,17 @@ from typing import Optional
 import aiohttp
 
 from oil_sentinel.config import Config, load as load_config
-from oil_sentinel.db import init_db
+from oil_sentinel.db import get_connection, init_db, latest_market_sample
 from oil_sentinel.ingestion import poll_and_store as gdelt_poll
 from oil_sentinel.market import poll_and_store as market_poll, any_anomaly
-from oil_sentinel.notifications import dispatch_alerts, dispatch_digest, dispatch_morning_summary, send_market_alert
+from oil_sentinel.narrative import evaluate_narrative
+from oil_sentinel.notifications import (
+    dispatch_alerts,
+    dispatch_digest,
+    dispatch_morning_summary,
+    send_market_alert,
+    send_narrative_transition_alert,
+)
 from oil_sentinel.scoring import make_gemini_client, score_pending_articles
 
 CONFIG_PATH = Path(__file__).parent / "config.ini"
@@ -79,6 +86,7 @@ class State:
         self.market_anomaly: bool = False
         self.last_market_alert: Optional[datetime] = None
         self.sent_digests: set = set()  # (date, hour) tuples already dispatched
+        self.narrative: dict = {}       # latest narrative evaluation result
 
 
 # ---------------------------------------------------------------------------
@@ -157,8 +165,17 @@ async def market_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
         await asyncio.sleep(interval)
 
 
+def _latest_wti_price(db_path: str) -> Optional[float]:
+    conn = get_connection(db_path)
+    try:
+        row = latest_market_sample(conn, "CL=F")
+        return float(row["price"]) if row else None
+    finally:
+        conn.close()
+
+
 async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
-    """Score pending articles and dispatch alerts every 2 minutes."""
+    """Score pending articles, evaluate narrative trend, and dispatch alerts every 2 minutes."""
     interval = 120
     logger = logging.getLogger("scoring_loop")
 
@@ -170,6 +187,7 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
         return
 
     client = make_gemini_client(cfg.gemini.api_key)
+    loop = asyncio.get_running_loop()
     logger.info("Scoring loop started (interval=%ds)", interval)
 
     while True:
@@ -182,10 +200,36 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
                 market_anomaly=state.market_anomaly,
             )
             if n:
-                logger.info("Scored %d articles -> dispatching alerts", n)
+                logger.info("Scored %d articles", n)
 
-            if _is_overnight(cfg, datetime.now(timezone.utc)):
-                logger.debug("Idle overnight — skipping alert dispatch")
+            # Evaluate narrative every cycle — state can change as the 48h window rolls forward
+            narrative = await loop.run_in_executor(
+                None,
+                lambda: evaluate_narrative(cfg.db_path, cfg.gdelt.tier1_domains),
+            )
+            state.narrative = narrative
+
+            overnight = _is_overnight(cfg, datetime.now(timezone.utc))
+
+            # Narrative transition: highest-priority signal, bypasses all cooldowns
+            # Only send during active hours (not overnight) to avoid noise
+            if (
+                narrative.get("is_transition")
+                and narrative.get("state_id")
+                and not overnight
+            ):
+                wti_price = await loop.run_in_executor(None, lambda: _latest_wti_price(cfg.db_path))
+                await send_narrative_transition_alert(
+                    cfg.db_path,
+                    session,
+                    bot_token=cfg.telegram.bot_token,
+                    chat_id=cfg.telegram.chat_id,
+                    narrative=narrative,
+                    wti_price=wti_price,
+                )
+
+            if overnight:
+                logger.debug("Idle overnight — skipping regular alert dispatch")
             else:
                 sent = await dispatch_alerts(
                     cfg.db_path,
@@ -194,9 +238,10 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
                     chat_id=cfg.telegram.chat_id,
                     alert_threshold=cfg.telegram.alert_threshold,
                     cooldown_minutes=cfg.telegram.cooldown_minutes,
+                    narrative_state=narrative if narrative.get("state") else None,
                 )
                 if sent:
-                    logger.info("Sent %d Telegram alerts", sent)
+                    logger.info("Sent %d Telegram alert batch(es)", sent)
         except Exception as exc:
             logger.exception("Scoring loop error: %s", exc)
         await asyncio.sleep(interval)

@@ -19,8 +19,10 @@ from oil_sentinel.db import (
     get_unsent_alerts,
     last_sent_for_narrative,
     mark_alert_sent,
+    mark_narrative_transition_alerted,
     transaction,
 )
+from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -186,20 +188,84 @@ def _pack_messages(header: str, entries: list[str], continuation_header: str) ->
     return messages
 
 
-def _batch_messages(alerts: list[dict]) -> list[str]:
+def _batch_messages(alerts: list[dict], narrative_state: Optional[dict] = None) -> list[str]:
     """Build one or more HTML messages for immediate alerts, split to fit Telegram."""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     any_mkt = any(a.get("market_anomaly") for a in alerts)
     anomaly_tag = "  \U0001f6a8 <b>market spike active</b>" if any_mkt else ""
 
+    narrative_tag = ""
+    if narrative_state and narrative_state.get("state"):
+        state = narrative_state["state"]
+        emoji = STATE_EMOJI.get(state, "")
+        label = STATE_LABELS.get(state, state.upper())
+        momentum = narrative_state.get("momentum", "")
+        momentum_icon = {"strengthening": "↑", "weakening": "↓", "stable": "→"}.get(momentum, "")
+        narrative_tag = f"\n\U0001f4ca Narrative: {emoji} <b>{label}</b>  {momentum_icon} {momentum}"
+
     header = (
         f"\U0001f6e2 <b>OIL SENTINEL</b>  \u00b7  "
         f"{len(alerts)} signal{'s' if len(alerts) != 1 else ''}  \u00b7  "
-        f"<i>{now_str}</i>{anomaly_tag}"
+        f"<i>{now_str}</i>{anomaly_tag}{narrative_tag}"
     )
     continuation = f"\U0001f6e2 <b>OIL SENTINEL</b>  \u00b7  <i>{now_str}</i>  \u00b7  (continued)"
     entries = [_format_alert_entry(a) for a in alerts]
     return _pack_messages(header, entries, continuation)
+
+
+def _format_narrative_transition(narrative: dict, wti_price: Optional[float]) -> str:
+    """Format a narrative state transition alert."""
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    prev  = narrative.get("previous_state") or "unknown"
+    curr  = narrative["state"]
+    prev_label = f"{STATE_EMOJI.get(prev, '')} {STATE_LABELS.get(prev, prev.upper())}"
+    curr_label = f"{STATE_EMOJI.get(curr, '')} {STATE_LABELS.get(curr, curr.upper())}"
+
+    momentum = narrative.get("momentum", "stable")
+    momentum_icon = {"strengthening": "↑ strengthening", "weakening": "↓ weakening", "stable": "→ stable"}.get(momentum, momentum)
+
+    bull_count = narrative.get("bull_count", 0)
+    bear_count = narrative.get("bear_count", 0)
+    neutral_count = narrative.get("neutral_count", 0)
+    avg_bull = narrative.get("avg_bull_mag")
+    avg_bear = narrative.get("avg_bear_mag")
+    score = narrative.get("weighted_score", 0.0)
+
+    bull_line  = f"{bull_count} bullish" + (f"  avg mag {avg_bull:.1f}" if avg_bull else "")
+    bear_line  = f"{bear_count} bearish" + (f"  avg mag {avg_bear:.1f}" if avg_bear else "")
+
+    price_line = f"\U0001f4b0 WTI: <b>${wti_price:.2f}</b>" if wti_price else ""
+
+    drivers = narrative.get("key_drivers") or []
+    driver_lines = []
+    for i, d in enumerate(drivers[:3], 1):
+        mag = d.get("magnitude") or 0
+        direction = d.get("direction") or "neutral"
+        d_emoji = DIRECTION_EMOJI.get(direction, "")
+        summary = (d.get("summary") or "").split("\n\n")[0][:80]
+        source = d.get("source_name") or ""
+        source_str = f"  <i>{_h(source)}</i>" if source else ""
+        driver_lines.append(
+            f"  {i}. {d_emoji} <b>[{mag}/10]</b> {_h(summary)}{source_str}"
+        )
+
+    parts = [
+        f"\U0001f504 <b>NARRATIVE SHIFT  \u00b7  OIL SENTINEL</b>  \u00b7  <i>{now_str}</i>",
+        SEP,
+        f"{prev_label}  \u2192  {curr_label}",
+        "",
+        f"\U0001f4ca 48h window:  {bull_line}  \u00b7  {bear_line}  \u00b7  {neutral_count} neutral",
+        f"   Weighted sentiment score: <b>{score:+.2f}</b>",
+        f"\U0001f4c8 Momentum: <b>{momentum_icon}</b>",
+    ]
+    if price_line:
+        parts.append(price_line)
+    if driver_lines:
+        parts.append("")
+        parts.append("\U0001f511 <b>Key Drivers</b>")
+        parts.extend(driver_lines)
+
+    return "\n".join(parts)
 
 
 def _digest_messages(alerts: list[dict], slot_label: str) -> list[str]:
@@ -319,6 +385,41 @@ async def send_message(
         return None
 
 
+async def send_narrative_transition_alert(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    *,
+    bot_token: str,
+    chat_id: str,
+    narrative: dict,
+    wti_price: Optional[float] = None,
+) -> bool:
+    """
+    Send a narrative state-transition alert. Bypasses all cooldowns.
+    Marks the state record as alerted in DB on success.
+    Returns True on success.
+    """
+    text = _format_narrative_transition(narrative, wti_price)
+    msg_id = await send_message(session, bot_token, chat_id, text)
+    if msg_id:
+        conn = get_connection(db_path)
+        try:
+            with transaction(conn):
+                mark_narrative_transition_alerted(conn, narrative["state_id"])
+        finally:
+            conn.close()
+        logger.info(
+            "Narrative transition alert sent: %s → %s  msg_id=%d",
+            narrative.get("previous_state"), narrative["state"], msg_id,
+        )
+        return True
+    logger.warning(
+        "Narrative transition alert FAILED: %s → %s",
+        narrative.get("previous_state"), narrative["state"],
+    )
+    return False
+
+
 async def send_market_alert(
     session: aiohttp.ClientSession,
     bot_token: str,
@@ -344,6 +445,7 @@ async def dispatch_alerts(
     chat_id: str,
     alert_threshold: int = 7,
     cooldown_minutes: int = 60,
+    narrative_state: Optional[dict] = None,
 ) -> int:
     """
     Send immediate alerts for signals with magnitude >= alert_threshold.
@@ -384,7 +486,7 @@ async def dispatch_alerts(
             return 0
 
         qualifying.sort(key=lambda a: a.get("magnitude") or 0, reverse=True)
-        messages = _batch_messages(qualifying)
+        messages = _batch_messages(qualifying, narrative_state=narrative_state)
         last_msg_id = None
         failed = False
         for text in messages:
