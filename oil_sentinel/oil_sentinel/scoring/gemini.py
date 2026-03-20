@@ -30,7 +30,9 @@ from oil_sentinel.db import (
     mark_article_scored,
     narrative_exists_recent,
     transaction,
+    update_article_body,
 )
+from oil_sentinel.ingestion.extractor import fetch_article_text
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +106,8 @@ USER_TEMPLATE = (
     "Source: {source}\n"
     "Published: {published_at}\n"
     "GDELT tone: {tone} (negative = negative sentiment; positive = positive sentiment)\n"
-    "Actors: {actors}\n\n"
+    "Actors: {actors}\n"
+    "{body_section}"
     "Active narrative threads (reuse the EXACT key if this article is a follow-up):\n"
     "{narrative_context}\n\n"
     "Score this article. Remember: diplomatic/deal/ceasefire articles are bearish. "
@@ -115,7 +118,11 @@ _MAX_RETRIES = 3
 _BASE_RETRY_DELAY = 40  # seconds -- matches free-tier RPM window
 
 
-def _build_prompt(article: dict, recent_narratives: list[str]) -> str:
+def _build_prompt(
+    article: dict,
+    recent_narratives: list[str],
+    body_text: Optional[str] = None,
+) -> str:
     actors = []
     try:
         actors = json.loads(article.get("actors") or "[]")
@@ -130,12 +137,19 @@ def _build_prompt(article: dict, recent_narratives: list[str]) -> str:
         narrative_context = "  " + "\n  ".join(recent_narratives)
     else:
         narrative_context = "  (none yet)"
+
+    if body_text and body_text.strip():
+        body_section = f"\nArticle text (first 2000 chars):\n{body_text}\n\n"
+    else:
+        body_section = "\n"
+
     return USER_TEMPLATE.format(
         title=article.get("title") or "(no title)",
         source=article.get("source_name") or "unknown",
         published_at=article.get("published_at") or "unknown",
         tone=tone_str,
         actors=", ".join(actors) or "unknown",
+        body_section=body_section,
         narrative_context=narrative_context,
     )
 
@@ -186,9 +200,10 @@ async def score_article(
     article: dict,
     model: str = "gemini-2.5-flash",
     recent_narratives: Optional[list[str]] = None,
+    body_text: Optional[str] = None,
 ) -> Optional[dict]:
     """Call Gemini for one article with retry on 429. Returns parsed dict or None."""
-    prompt = _build_prompt(article, recent_narratives or [])
+    prompt = _build_prompt(article, recent_narratives or [], body_text=body_text)
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
         temperature=0.2,
@@ -232,11 +247,13 @@ async def score_pending_articles(
     market_anomaly: bool = False,
 ) -> int:
     """
-    Pull unscored articles from DB, score them, create alerts.
+    Pull unscored articles from DB, extract body text, score with Gemini, create alerts.
     Returns number of alerts created.
     """
     conn = get_connection(db_path)
     alerts_created = 0
+    extract_attempted = 0
+    extract_succeeded = 0
 
     try:
         rows = get_unscored_articles(conn, limit=batch_size)
@@ -249,12 +266,33 @@ async def score_pending_articles(
         for row in rows:
             article = dict(row)
 
+            # ── Body text extraction ─────────────────────────────────────────
+            # Use cached body_text if already in DB; otherwise fetch now.
+            body_text: Optional[str] = article.get("body_text")
+            if not body_text:
+                extract_attempted += 1
+                body_text = await asyncio.to_thread(fetch_article_text, article["url"])
+                if body_text:
+                    extract_succeeded += 1
+                    with transaction(conn):
+                        update_article_body(conn, article["id"], body_text)
+                    logger.debug(
+                        "Extracted %d chars from %s", len(body_text), article.get("source_name", "")
+                    )
+                else:
+                    logger.debug("No body text for %s — title-only scoring", article.get("url", "")[:80])
+                # Brief pause between HTTP fetches to be polite to news sites
+                await asyncio.sleep(1.5)
+
+            # ── Gemini scoring ───────────────────────────────────────────────
             # Refresh narrative context before each article so Gemini sees
             # keys generated earlier in this same batch
             recent_narratives = get_recent_narrative_keys(conn, within_hours=12)
 
             result = await score_article(
-                client, article, model=model, recent_narratives=recent_narratives
+                client, article, model=model,
+                recent_narratives=recent_narratives,
+                body_text=body_text,
             )
 
             with transaction(conn):
@@ -294,17 +332,26 @@ async def score_pending_articles(
                 mark_article_scored(conn, article["id"])
                 alerts_created += 1
 
+            has_body = "full-text" if body_text else "title-only"
             logger.info(
-                "Scored [%s] mag=%d conf=%.2f dir=%s comp=%.2f | %s",
+                "Scored [%s] mag=%d conf=%.2f dir=%s comp=%.2f [%s] | %s",
                 result["narrative_key"],
                 result["magnitude"],
                 result["confidence"],
                 result["direction"],
                 composite,
+                has_body,
                 article.get("title", "")[:60],
             )
 
             await asyncio.sleep(4)
+
+        if extract_attempted:
+            logger.info(
+                "Body extraction: %d/%d succeeded (%.0f%%) this batch",
+                extract_succeeded, extract_attempted,
+                100 * extract_succeeded / extract_attempted,
+            )
     finally:
         conn.close()
 

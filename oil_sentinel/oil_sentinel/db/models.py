@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS articles (
     gdelt_themes  TEXT,                             -- JSON array of theme codes
     actors        TEXT,                             -- JSON array of matched actors
     raw_json      TEXT,                             -- full GDELT record as JSON
+    body_text     TEXT,                             -- extracted full article text (trafilatura)
     scored        INTEGER NOT NULL DEFAULT 0        -- 0=pending, 1=scored, 2=skipped
 );
 
@@ -143,6 +144,11 @@ def init_db(db_path: str) -> None:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_articles_title_hash ON articles(title_hash)"
             )
+
+        # Migration: add body_text column to articles if absent
+        article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+        if "body_text" not in article_cols:
+            conn.execute("ALTER TABLE articles ADD COLUMN body_text TEXT")
 
         # Migration: widen magnitude constraint from 1-5 to 0-10.
         # SQLite cannot ALTER CHECK constraints, so recreate the alerts table.
@@ -237,6 +243,13 @@ def insert_article(
         return cursor.lastrowid
     except sqlite3.IntegrityError:
         return None  # duplicate
+
+
+def update_article_body(conn: sqlite3.Connection, article_id: int, body_text: str) -> None:
+    """Store extracted body text for an article."""
+    conn.execute(
+        "UPDATE articles SET body_text = ? WHERE id = ?", (body_text, article_id)
+    )
 
 
 def get_unscored_articles(
