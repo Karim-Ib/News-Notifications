@@ -25,7 +25,7 @@ Three independent loops run concurrently:
 |---|---|---|
 | **News** | 15 min (90 min overnight) | Polls GDELT for Iran/Hormuz/OPEC articles, pre-filters, deduplicates, stores |
 | **Market** | 5 min (paused overnight) | Fetches WTI & Brent futures prices, computes rolling z-scores, flags anomalies |
-| **Scoring** | 2 min | Sends unscored articles to Gemini, creates alerts in DB |
+| **Scoring** | 2 min | Sends unscored articles to Gemini, creates alerts in DB, recomputes narrative state |
 | **Dispatch** | every 2 min (paused overnight) | Sends qualifying alerts to Telegram immediately |
 | **Digest** | 12:00 & 20:00 UTC | Summarises all sub-threshold signals accumulated since last digest |
 | **Morning summary** | 09:00 UTC (idle mode only) | Concise top-7 overnight briefing covering all signals since 22:00 |
@@ -41,6 +41,8 @@ Articles are scored by Gemini on a **0–10 magnitude scale**:
 | 0–3 | Minor / noise | Twice-daily digest |
 
 If a market price anomaly (z-score ≥ 2.0) coincides with scoring, the composite score gets a +1 bonus, making high-magnitude news even more likely to fire immediately.
+
+**Narrative state transitions** are the highest-priority signal. When the 48-hour sentiment window shifts from one state to another (e.g. `stable → escalation`), a dedicated alert fires immediately, bypassing all cooldowns.
 
 Long batches are automatically split across multiple Telegram messages (4096-char limit per message).
 
@@ -66,19 +68,22 @@ oil_sentinel/
 │   ├── config.py              # Typed config loader (dataclasses)
 │   ├── db/
 │   │   ├── __init__.py
-│   │   └── models.py          # SQLite schema + CRUD
+│   │   └── models.py          # SQLite schema + CRUD (articles, alerts, market_data, narrative_states)
 │   ├── ingestion/
 │   │   ├── __init__.py
 │   │   └── gdelt.py           # GDELT DOC API polling & pre-filtering
 │   ├── market/
 │   │   ├── __init__.py
 │   │   └── poller.py          # yfinance price fetching + z-score anomaly detection
+│   ├── narrative/
+│   │   ├── __init__.py
+│   │   └── engine.py          # 48h rolling sentiment state, momentum, key drivers, transition detection
 │   ├── scoring/
 │   │   ├── __init__.py
 │   │   └── gemini.py          # Gemini AI article scoring
 │   └── notifications/
 │       ├── __init__.py
-│       └── telegram.py        # Alert formatting + Telegram dispatch
+│       └── telegram.py        # Alert formatting + Telegram dispatch (including narrative transitions)
 ├── main.py                    # Async orchestrator — run this
 ├── config.ini                 # Your local config (not committed)
 ├── config.ini.example         # Template
@@ -203,13 +208,60 @@ Duplicate narratives are suppressed by a three-layer dedup pipeline (see [Dedupl
 
 ---
 
+## Narrative trend tracking
+
+Every scoring cycle, the system recomputes a **rolling 48-hour sentiment state** from all scored alerts in the window.
+
+### Weighted sentiment score
+
+Each alert contributes:
+```
+direction_sign × magnitude × confidence × tier_weight
+```
+- `direction_sign`: `+1` bullish, `−1` bearish, `0` neutral
+- `tier_weight`: `1.2` for tier-1 sources (Reuters, Bloomberg, etc.), `1.0` for others
+
+The contributions are averaged across all alerts in the window.
+
+### State classification
+
+| Score | State |
+|---|---|
+| ≥ 3.0 | 🔴 `strong_escalation` |
+| ≥ 1.0 | 🟠 `escalation` |
+| −1.0 to 1.0 | 🟡 `stable` |
+| ≤ −1.0 | 🟢 `de_escalation` |
+| ≤ −3.0 | 💚 `strong_de_escalation` |
+
+### Momentum
+
+Compares the previous 12h window score to the current 12h window score:
+- Δ > +0.5 → **strengthening**
+- Δ < −0.5 → **weakening**
+- else → **stable**
+
+### State transitions
+
+When the state changes, a dedicated alert fires immediately — **no cooldown, no threshold gate**. It includes:
+- Previous state → new state
+- 48h article counts (bullish / bearish / neutral) and average magnitudes per direction
+- Weighted sentiment score
+- Momentum indicator
+- Top-3 key driver articles (highest magnitude in the direction matching the new state)
+- Live WTI price
+
+Narrative state is also shown as context in the header of every regular immediate alert.
+
+---
+
 ## Database
 
-SQLite with WAL mode. Three tables:
+SQLite with WAL mode. Four tables:
 
 - **`articles`** — raw GDELT records, deduped by URL hash and 8-word title hash
 - **`market_data`** — 5-min price samples with z-scores
 - **`alerts`** — scored signals with dispatch state (`sent_at = NULL` until sent)
+- **`narrative_states`** — full history of computed narrative states, including weighted score, momentum, counts, and `transition_alerted` flag
 
 Schema migrations run automatically on startup.
 
@@ -228,6 +280,37 @@ rigzone.com  ·  19 Mar 2026 18:20 UTC
 Supply disruption affects ~400kb/d of Gulf Coast processing capacity.
 Prices likely to test $98 in 24h; key risk is US diplomatic intervention.
 thread: iran_gulf_refinery_strikes
+```
+
+### Immediate alert (with narrative context)
+```
+🛢 OIL SENTINEL · 2 signals · 2026-03-19 18:34 UTC
+📊 Narrative: 🟠 ESCALATION  ↑ strengthening
+────────────────────────
+🟠 HIGH  📈 Oil Prices Spike After Iran Strikes Gulf Refinery
+██████████ 8/10 · BULLISH · Infrastructure Attack · 80% conf · score 6.4
+rigzone.com  ·  19 Mar 2026 18:20 UTC
+
+Supply disruption affects ~400kb/d of Gulf Coast processing capacity.
+Prices likely to test $98 in 24h; key risk is US diplomatic intervention.
+thread: iran_gulf_refinery_strikes
+```
+
+### Narrative state transition alert
+```
+🔄 NARRATIVE SHIFT · OIL SENTINEL · 2026-03-19 16:02 UTC
+────────────────────────
+🟡 STABLE → 🟠 ESCALATION
+
+📊 48h window: 8 bullish avg mag 6.3 · 3 bearish avg mag 3.8 · 2 neutral
+   Weighted sentiment score: +1.83
+📈 Momentum: ↑ strengthening
+💰 WTI: $84.37
+
+🔑 Key Drivers
+  1. 📈 [8/10] Iran closes Hormuz for naval exercises  reuters.com
+  2. 📈 [7/10] Saudi Aramco halts Red Sea exports  bloomberg.com
+  3. 📈 [6/10] OPEC emergency session called  oilprice.com
 ```
 
 ### Digest
