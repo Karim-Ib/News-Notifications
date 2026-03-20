@@ -302,13 +302,18 @@ async def score_pending_articles(
 
                 narrative_key = result["narrative_key"]
 
-                # Block duplicate: if a matching narrative already exists in
-                # the last 12h (exact or >=60% word-overlap), skip alert creation
-                existing = narrative_exists_recent(conn, narrative_key, within_hours=12)
+                # Block duplicate: if a matching narrative already exists in the last
+                # 12h (exact or >=75% word-overlap), skip alert creation.
+                # Exception: direction flip on the same narrative thread passes through.
+                existing = narrative_exists_recent(
+                    conn, narrative_key,
+                    within_hours=12,
+                    incoming_direction=result["direction"],
+                )
                 if existing:
                     logger.info(
-                        "Dedup: skipping [%s] — matches existing narrative [%s]",
-                        narrative_key, existing,
+                        "Dedup: skipping [%s] — matches existing narrative [%s] (dir=%s)",
+                        narrative_key, existing, result["direction"],
                     )
                     mark_article_scored(conn, article["id"], skipped=True)
                     continue

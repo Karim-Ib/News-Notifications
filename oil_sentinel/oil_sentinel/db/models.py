@@ -383,28 +383,62 @@ def _narrative_jaccard(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
+def _latest_direction_for_narrative(
+    conn: sqlite3.Connection, narrative_key: str
+) -> Optional[str]:
+    """Return the direction of the most recent alert for this narrative key."""
+    row = conn.execute(
+        """
+        SELECT direction FROM alerts
+        WHERE narrative_key = ?
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        (narrative_key,),
+    ).fetchone()
+    return row["direction"] if row else None
+
+
 def narrative_exists_recent(
     conn: sqlite3.Connection,
     narrative_key: str,
     within_hours: int = 12,
-    similarity_threshold: float = 0.6,
+    similarity_threshold: float = 0.75,
+    incoming_direction: Optional[str] = None,
 ) -> Optional[str]:
     """
     Return the matching existing narrative_key if one already exists within the window,
     either as an exact match or with Jaccard word-overlap >= similarity_threshold.
     Returns None if no match found.
+
+    Direction bypass: if incoming_direction differs from the matched narrative's most
+    recent direction (e.g. bearish article on a bullish narrative thread), returns None
+    to let the alert through — a signal reversal on the same topic is always newsworthy.
+    Neutral articles are never bypassed (no directional signal to compare).
     """
     recent = get_recent_narrative_keys(conn, within_hours=within_hours)
     if not recent:
         return None
-    # Exact match first
+
+    # Find matching key — exact first, then fuzzy
+    matched_key = None
     if narrative_key in recent:
-        return narrative_key
-    # Fuzzy: word-overlap
-    for existing in recent:
-        if _narrative_jaccard(narrative_key, existing) >= similarity_threshold:
-            return existing
-    return None
+        matched_key = narrative_key
+    else:
+        for existing in recent:
+            if _narrative_jaccard(narrative_key, existing) >= similarity_threshold:
+                matched_key = existing
+                break
+
+    if matched_key is None:
+        return None
+
+    # Direction bypass: opposing signal on the same narrative thread → let it through
+    if incoming_direction and incoming_direction != "neutral":
+        existing_direction = _latest_direction_for_narrative(conn, matched_key)
+        if existing_direction and existing_direction != incoming_direction:
+            return None  # direction flip — not a duplicate
+
+    return matched_key
 
 
 def last_sent_for_narrative(
