@@ -312,6 +312,7 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
                     alert_threshold=cfg.telegram.alert_threshold,
                     cooldown_minutes=cfg.telegram.cooldown_minutes,
                     narrative_state=narrative if narrative.get("state") else None,
+                    max_article_age_hours=cfg.gdelt.max_article_age_hours,
                 )
                 if sent:
                     logger.info("Sent %d Telegram alert batch(es)", sent)

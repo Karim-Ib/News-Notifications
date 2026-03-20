@@ -71,7 +71,7 @@ def _fetch_alerts(conn: sqlite3.Connection, within_hours: int) -> list[dict]:
         """
         SELECT al.id, al.direction, al.magnitude, al.confidence,
                al.narrative_key, al.summary, al.created_at,
-               ar.source_name
+               ar.source_name, ar.url AS article_url
         FROM alerts al
         LEFT JOIN articles ar ON al.article_id = ar.id
         WHERE al.created_at >= datetime('now', ? || ' hours')
@@ -90,7 +90,7 @@ def _fetch_alerts_between(
         """
         SELECT al.id, al.direction, al.magnitude, al.confidence,
                al.narrative_key, al.summary, al.created_at,
-               ar.source_name
+               ar.source_name, ar.url AS article_url
         FROM alerts al
         LEFT JOIN articles ar ON al.article_id = ar.id
         WHERE al.created_at >= datetime('now', ? || ' hours')

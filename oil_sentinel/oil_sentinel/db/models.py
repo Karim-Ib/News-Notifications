@@ -492,7 +492,8 @@ def get_unsent_alerts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         """
         SELECT al.*,
                ar.published_at  AS article_published_at,
-               ar.source_name   AS article_source
+               ar.source_name   AS article_source,
+               ar.url           AS article_url
         FROM alerts al
         LEFT JOIN articles ar ON al.article_id = ar.id
         WHERE al.sent_at IS NULL

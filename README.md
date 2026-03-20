@@ -45,6 +45,8 @@ If a market price anomaly (z-score ≥ 2.0) coincides with scoring, the composit
 
 **Narrative state transitions** are the highest-priority signal. When the 48-hour sentiment window shifts from one state to another (e.g. `stable → escalation`), a dedicated alert fires immediately, bypassing all cooldowns.
 
+**Staleness guard**: When the bot restarts with a backlog of unscored articles, only articles whose GDELT index time is within `max_article_age_hours` (default: same as ingestion limit) are dispatched. Older alerts are silently marked as sent to prevent a burst of stale signals being sent against current prices. Chart markers always use article publication time (not scoring time) to ensure price/news correlation is accurate.
+
 Long batches are automatically split across multiple Telegram messages (4096-char limit per message).
 
 Every immediate alert, market anomaly, and narrative transition also sends a **WTI 24h price chart** as an image, with vertical markers showing exactly when each alert fired. Bullish markers are red (▲ supply risk), bearish markers are green (▼ supply relief), and market anomaly markers are amber (●).

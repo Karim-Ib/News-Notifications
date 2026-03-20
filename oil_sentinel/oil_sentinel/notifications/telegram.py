@@ -85,6 +85,25 @@ def _h(text: str) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _parse_to_utc(raw: str) -> Optional[datetime]:
+    """Parse GDELT seendate or SQL datetime string to a UTC datetime, or None."""
+    if not raw:
+        return None
+    for fmt in ("%Y%m%dT%H%M%SZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _source_link(source: str, url: str) -> str:
+    """Return a clickable HTML link if url is present, otherwise plain source name."""
+    if url:
+        return f'<a href="{_h(url)}">{_h(source)}</a>'
+    return _h(source)
+
+
 SEP = "\u2500" * 24
 
 
@@ -121,6 +140,7 @@ def _format_alert_entry(alert: dict) -> str:
     market_flag = " \U0001f6a8" if alert.get("market_anomaly") else ""
     pub_date = _parse_published(alert.get("article_published_at") or "")
     source = alert.get("article_source") or ""
+    url    = alert.get("article_url") or ""
 
     bar = _mag_bar(magnitude)
 
@@ -130,7 +150,7 @@ def _format_alert_entry(alert: dict) -> str:
 
     meta_parts = []
     if source:
-        meta_parts.append(_h(source))
+        meta_parts.append(_source_link(source, url))
     meta_parts.append(_h(pub_date))
     meta_line = "  \u00b7  ".join(meta_parts)
 
@@ -156,8 +176,9 @@ def _format_digest_entry(alert: dict) -> str:
     summary_raw = alert.get("summary") or "(no summary)"
     source = alert.get("article_source") or ""
 
+    url    = alert.get("article_url") or ""
     headline = summary_raw.split("\n\n", 1)[0].strip()
-    source_str = f" <i>{_h(source)}</i>" if source else ""
+    source_str = f" <i>{_source_link(source, url)}</i>" if source else ""
 
     return (
         f"{d_emoji} <b>[{magnitude}/10]</b> {_h(headline)}{source_str}\n"
@@ -250,7 +271,8 @@ def _format_narrative_transition(narrative: dict, wti_price: Optional[float]) ->
         d_emoji = DIRECTION_EMOJI.get(direction, "")
         summary = (d.get("summary") or "").split("\n\n")[0][:80]
         source = d.get("source_name") or ""
-        source_str = f"  <i>{_h(source)}</i>" if source else ""
+        url    = d.get("article_url") or ""
+        source_str = f"  <i>{_source_link(source, url)}</i>" if source else ""
         driver_lines.append(
             f"  {i}. {d_emoji} <b>[{mag}/10]</b> {_h(summary)}{source_str}"
         )
@@ -333,7 +355,8 @@ def _format_morning_summary(alerts: list[dict], top_n: int = 7) -> str:
         summary_raw = a.get("summary") or "(no summary)"
         headline = summary_raw.split("\n\n", 1)[0].strip()
         source = a.get("article_source") or ""
-        source_str = f"  <i>{_h(source)}</i>" if source else ""
+        url    = a.get("article_url") or ""
+        source_str = f"  <i>{_source_link(source, url)}</i>" if source else ""
 
         entries.append(
             f"{d_emoji} <b>[{magnitude}/10]</b> {_h(headline)}{source_str}\n"
@@ -617,10 +640,13 @@ async def dispatch_alerts(
     alert_threshold: int = 7,
     cooldown_minutes: int = 60,
     narrative_state: Optional[dict] = None,
+    max_article_age_hours: int = 6,
 ) -> int:
     """
     Send immediate alerts for signals with magnitude >= alert_threshold.
     Sub-threshold signals are left unsent for the digest.
+    Alerts whose article is older than max_article_age_hours are silently
+    marked as sent without dispatching (prevents stale-restart noise).
     Returns 1 if a batch was sent, 0 otherwise.
     """
     conn = get_connection(db_path)
@@ -631,10 +657,21 @@ async def dispatch_alerts(
 
         now = datetime.now(timezone.utc)
         qualifying = []
+        stale_ids = []
 
         for row in unsent:
             alert = dict(row)
             magnitude = alert.get("magnitude") or 0
+
+            # Staleness guard: skip (and silently mark sent) if article is too old
+            article_ts = _parse_to_utc(alert.get("article_published_at") or "")
+            if article_ts and (now - article_ts).total_seconds() > max_article_age_hours * 3600:
+                logger.info(
+                    "Alert %d skipped — article published %s is older than %dh",
+                    alert["id"], article_ts.isoformat(), max_article_age_hours,
+                )
+                stale_ids.append(alert["id"])
+                continue
 
             # Sub-threshold → leave for digest
             if magnitude < alert_threshold:
@@ -653,21 +690,27 @@ async def dispatch_alerts(
 
             qualifying.append(alert)
 
+        # Mark stale alerts as sent so they don't keep appearing
+        if stale_ids:
+            with transaction(conn):
+                for aid in stale_ids:
+                    mark_alert_sent(conn, aid, telegram_msg_id=None)
+
         if not qualifying:
             return 0
 
         qualifying.sort(key=lambda a: a.get("magnitude") or 0, reverse=True)
 
-        # Build chart markers from alert creation timestamps
+        # Build chart markers using article publication time for accurate price correlation
         chart_markers = []
         for alert in qualifying:
             direction = alert.get("direction") or "neutral"
-            raw_ts = alert.get("created_at") or ""
-            try:
-                ts = datetime.fromisoformat(raw_ts).replace(tzinfo=timezone.utc)
-                chart_markers.append((ts, direction))
-            except (ValueError, TypeError):
-                chart_markers.append((now, direction))
+            ts = (
+                _parse_to_utc(alert.get("article_published_at") or "")
+                or _parse_to_utc(alert.get("created_at") or "")
+                or now
+            )
+            chart_markers.append((ts, direction))
 
         wti_price_str = ""
         conn2 = get_connection(db_path)
