@@ -89,6 +89,10 @@ oil_sentinel/
 │   ├── scoring/
 │   │   ├── __init__.py
 │   │   └── gemini.py          # Gemini AI article scoring
+│   ├── portfolio/
+│   │   ├── __init__.py
+│   │   ├── tracker.py         # ETP price cache, position calculation, hourly snapshots
+│   │   └── chart.py           # Portfolio value vs invested chart (matplotlib)
 │   └── notifications/
 │       ├── __init__.py
 │       ├── telegram.py        # Alert formatting + Telegram dispatch (including narrative transitions)
@@ -268,13 +272,16 @@ Narrative state is also shown as context in the header of every regular immediat
 
 ## Database
 
-SQLite with WAL mode. Four tables:
+SQLite with WAL mode. Seven tables:
 
 - **`articles`** — raw GDELT records, deduped by URL hash and 8-word title hash
 - **`market_data`** — 5-min price samples with z-scores
 - **`alerts`** — scored signals with dispatch state (`sent_at = NULL` until sent)
 - **`narrative_states`** — full history of computed narrative states, including weighted score, momentum, counts, and `transition_alerted` flag
 - **`price_watches`** — user-defined price triggers (`active=0` once fired or manually removed)
+- **`portfolios`** — named ETP tracking entries (`long` → 3OIL.MI, `short` → 3OIS.MI)
+- **`transactions`** — buy/sell records with EUR amount, price per unit, and units
+- **`portfolio_snapshots`** — hourly snapshots of portfolio value and P/L for charting and statistics
 
 Schema migrations run automatically on startup.
 
@@ -301,6 +308,29 @@ The bot responds to slash commands sent directly in the configured Telegram chat
 | `/idle tz Europe/Berlin` | Set the timezone used for the overnight window (returns to auto) |
 | `/idle tz local` | Revert to server local time |
 | `/help` | Command list |
+
+### Portfolio commands
+
+| Command | Response |
+|---|---|
+| `/portfolio create hormuz-short short` | Create a portfolio tracking WTI 3x Daily Short (3OIS.MI) |
+| `/portfolio create oil-bull long` | Create a portfolio tracking WTI 3x Daily Long (3OIL.MI) |
+| `/portfolio hormuz-short` | Show current state: units, avg cost, live value, P/L |
+| `/portfolios` | List all active portfolios with one-line P/L summary |
+| `/buy hormuz-short 100` | Record a €100 purchase at current live price |
+| `/sell hormuz-short 50` | Record a €50 sale at current live price |
+| `/sell hormuz-short all` | Sell all held units |
+| `/portfolio history hormuz-short` | Full transaction log |
+| `/portfolio chart hormuz-short 30d` | Portfolio value vs invested chart (7d / 30d / 90d / all) |
+| `/portfolio stats hormuz-short` | Detailed statistics: best/worst day, max drawdown, DCA averages |
+| `/portfolio delete hormuz-short` | Deactivate portfolio (prompts `/confirm`; history preserved) |
+| `/confirm` | Confirm a pending destructive action |
+
+**Products supported:**
+- `long` → WisdomTree WTI 3x Daily Leveraged (3OIL.MI, Milan). Fallback: 3OIL.L (London)
+- `short` → WisdomTree WTI 3x Daily Short (3OIS.MI, Milan). Fallback: 3OIS.L (London)
+
+ETP prices are fetched via yfinance with a 5-minute cache. Hourly snapshots are stored in `portfolio_snapshots` for charting and statistics. A one-line summary per portfolio is included in the morning briefing.
 
 Commands are registered with Telegram on startup via `setMyCommands`, so they appear as autocomplete suggestions when you type `/` in the chat. They are silently ignored if sent from any chat other than the configured `chat_id`.
 

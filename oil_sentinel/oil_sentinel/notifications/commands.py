@@ -12,6 +12,7 @@ Supported commands
 /help    — List available commands
 """
 
+import asyncio
 import logging
 import sys
 from datetime import datetime, timezone
@@ -30,19 +31,33 @@ from oil_sentinel.charts import generate_price_chart, generate_price_narrative_c
 from oil_sentinel.db import (
     deactivate_all_watches,
     deactivate_watch,
+    deactivate_portfolio,
+    get_active_portfolios,
     get_active_watches,
     get_connection,
     get_narrative_history,
+    get_portfolio_by_name,
+    get_portfolio_snapshots,
     get_price_history,
     get_recently_sent_alerts,
+    get_transactions,
     get_watch_by_id,
-    insert_watch,
+    insert_portfolio,
+    insert_transaction,
     latest_market_sample,
     transaction,
     update_watch_price,
 )
 from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 from oil_sentinel.notifications.telegram import TICKER_LABELS, send_message, send_photo
+from oil_sentinel.portfolio import (
+    PRODUCT_NAMES,
+    PRODUCT_TICKERS,
+    fetch_etp_price,
+    get_portfolio_position,
+    get_portfolio_stats,
+)
+from oil_sentinel.portfolio.chart import generate_portfolio_chart
 
 logger = logging.getLogger(__name__)
 
@@ -60,22 +75,33 @@ TICKER_ALIASES: dict[str, str] = {
     "bz=f": "BZ=F",
 }
 
-# Add new public commands here. /shutdown_bot is intentionally absent.
+# Add new public commands here. /shutdown_bot and /confirm are intentionally absent.
 BOT_COMMANDS: list[tuple[str, str]] = [
-    ("chart",     "WTI price+narrative chart. /chart [days 1–30, default 7]"),
-    ("status",    "Narrative state, live WTI price & anomaly flag"),
-    ("watch",     "Set a price alert  e.g. /watch wti below 85 Entry"),
-    ("watches",   "List all active price watches"),
-    ("unwatch",   "Remove a watch by ID  e.g. /unwatch 1  or  /unwatch all"),
-    ("editwatch", "Change a watch target  e.g. /editwatch 1 88.50"),
-    ("idle",      "Show or change idle mode and timezone"),
-    ("help",      "List all available commands"),
+    ("chart",      "WTI price+narrative chart. /chart [days 1–30, default 7]"),
+    ("status",     "Narrative state, live WTI price & anomaly flag"),
+    ("watch",      "Set a price alert  e.g. /watch wti below 85 Entry"),
+    ("watches",    "List all active price watches"),
+    ("unwatch",    "Remove a watch by ID  e.g. /unwatch 1  or  /unwatch all"),
+    ("editwatch",  "Change a watch target  e.g. /editwatch 1 88.50"),
+    ("portfolio",  "View/manage portfolios  e.g. /portfolio hormuz-short"),
+    ("portfolios", "List all active portfolios"),
+    ("buy",        "Record a buy  e.g. /buy hormuz-short 100"),
+    ("sell",       "Record a sell  e.g. /sell hormuz-short 100  or  all"),
+    ("idle",       "Show or change idle mode and timezone"),
+    ("help",       "List all available commands"),
 ]
 
 _HELP_TEXT = (
     "🛢 <b>Oil Sentinel — Commands</b>\n\n"
     + "\n".join(f"/{cmd}  — {desc}" for cmd, desc in BOT_COMMANDS)
-    + "\n\n<b>/idle subcommands:</b>\n"
+    + "\n\n<b>/portfolio subcommands:</b>\n"
+    "  /portfolio create &lt;name&gt; &lt;long|short&gt;\n"
+    "  /portfolio &lt;name&gt;            — view state\n"
+    "  /portfolio history &lt;name&gt;\n"
+    "  /portfolio chart &lt;name&gt; [7d|30d|90d|all]\n"
+    "  /portfolio stats &lt;name&gt;\n"
+    "  /portfolio delete &lt;name&gt;\n"
+    "\n<b>/idle subcommands:</b>\n"
     "  /idle on          — force idle mode\n"
     "  /idle off         — force normal mode\n"
     "  /idle auto        — return to automatic (time-based)\n"
@@ -84,7 +110,7 @@ _HELP_TEXT = (
 )
 
 # All commands that the dispatcher will route (public + hidden)
-_ROUTABLE: set[str] = {f"/{cmd}" for cmd, _ in BOT_COMMANDS} | {"/shutdown_bot"}
+_ROUTABLE: set[str] = {f"/{cmd}" for cmd, _ in BOT_COMMANDS} | {"/shutdown_bot", "/confirm"}
 
 # ---------------------------------------------------------------------------
 # Rate limit for /chart
@@ -666,6 +692,752 @@ async def _cmd_idle(
     await send_message(session, bot_token, chat_id, text)
 
 
+# ---------------------------------------------------------------------------
+# Portfolio helpers
+# ---------------------------------------------------------------------------
+
+def _h(text: str) -> str:
+    """Escape text for Telegram HTML."""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+TIMEFRAME_HOURS: dict[str, Optional[int]] = {
+    "7d":  7 * 24,
+    "30d": 30 * 24,
+    "90d": 90 * 24,
+    "all": None,
+}
+
+
+async def _portfolio_create(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, args: list[str],
+) -> None:
+    """/portfolio create <name> <long|short>"""
+    if len(args) < 2:
+        await send_message(
+            session, bot_token, chat_id,
+            "⚠️ Usage: <code>/portfolio create &lt;name&gt; &lt;long|short&gt;</code>\n"
+            "Example: <code>/portfolio create hormuz-short short</code>",
+        )
+        return
+
+    name = args[0].lower()
+    product = args[1].lower()
+
+    if product not in ("long", "short"):
+        await send_message(
+            session, bot_token, chat_id,
+            "❌ Product must be <code>long</code> or <code>short</code>.",
+        )
+        return
+
+    ticker_primary, _ = PRODUCT_TICKERS[product]
+    product_name = PRODUCT_NAMES[product]
+
+    conn = get_connection(db_path)
+    try:
+        # Check if name already exists
+        existing = get_portfolio_by_name(conn, name)
+        if existing:
+            status = "active" if existing["active"] else "deleted"
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> already exists ({status}).",
+            )
+            return
+        with transaction(conn):
+            portfolio_id = insert_portfolio(
+                conn, name=name, ticker=ticker_primary,
+                product=product, currency="EUR",
+            )
+    finally:
+        conn.close()
+
+    await send_message(
+        session, bot_token, chat_id,
+        f"📁 Portfolio <b>{_h(name)}</b> created — tracking {_h(product_name)} "
+        f"(<code>{_h(ticker_primary)}</code>)\n"
+        f"<i>Use /buy {_h(name)} &lt;amount&gt; to record your first purchase.</i>",
+    )
+    logger.info("Portfolio '%s' created: %s (%s)", name, product_name, ticker_primary)
+
+
+async def _portfolio_show(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, name: str,
+) -> None:
+    """Show current state of a portfolio."""
+    loop = asyncio.get_running_loop()
+
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.\n"
+                f"<i>/portfolio create {_h(name)} long|short</i> to create it.",
+            )
+            return
+        p = dict(p)
+        pos = get_portfolio_position(conn, p["id"])
+    finally:
+        conn.close()
+
+    ticker_primary = p["ticker"]
+    ticker_fallback = PRODUCT_TICKERS.get(p["product"], (ticker_primary, ticker_primary))[1]
+    product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+
+    price, used_ticker, is_stale, fetched_at = await loop.run_in_executor(
+        None, lambda: fetch_etp_price(ticker_primary, ticker_fallback)
+    )
+
+    if price is None:
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Could not fetch price for <code>{_h(ticker_primary)}</code>. "
+            "Try again shortly.",
+        )
+        return
+
+    current_value = pos["total_units"] * price
+    pnl_eur = current_value - pos["net_invested"]
+    pnl_pct = (pnl_eur / pos["net_invested"] * 100) if pos["net_invested"] > 0 else 0.0
+    pnl_sign = "+" if pnl_eur >= 0 else ""
+
+    stale_note = ""
+    if is_stale and fetched_at:
+        age_min = int((datetime.now(timezone.utc) - fetched_at).total_seconds() / 60)
+        stale_note = f"\n⚠️ <i>Stale price — last fetched {age_min}min ago</i>"
+    elif used_ticker != ticker_primary:
+        stale_note = f"\n⚠️ <i>Using London fallback ticker {_h(used_ticker)} (GBP)</i>"
+
+    buys_label = f"{pos['buy_count']} buy{'s' if pos['buy_count'] != 1 else ''}"
+    sep = "─" * 24
+    text = (
+        f"📊 <b>Portfolio: {_h(name)}</b>\n{sep}\n"
+        f"Product:        {_h(product_name)} (<code>{_h(used_ticker)}</code>)\n"
+        f"Total invested: €{pos['total_invested']:.2f} ({buys_label})\n"
+        f"Units held:     {pos['total_units']:.4f}\n"
+        f"Avg cost basis: €{pos['avg_cost']:.4f}\n"
+        f"Current price:  €{price:.4f}\n"
+        f"Current value:  €{current_value:.2f}\n"
+        f"P/L:            {pnl_sign}€{pnl_eur:.2f} ({pnl_sign}{pnl_pct:.1f}%)"
+        f"{stale_note}"
+    )
+    await send_message(session, bot_token, chat_id, text)
+
+
+async def _portfolio_history(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, name: str,
+) -> None:
+    """Show transaction history for a portfolio."""
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.",
+            )
+            return
+        p = dict(p)
+        txs = get_transactions(conn, p["id"])
+    finally:
+        conn.close()
+
+    if not txs:
+        await send_message(
+            session, bot_token, chat_id,
+            f"📜 Portfolio <b>{_h(name)}</b> has no transactions yet.",
+        )
+        return
+
+    sep = "─" * 24
+    lines = [f"📜 <b>History: {_h(name)}</b>\n{sep}"]
+    for i, tx in enumerate(txs, 1):
+        date_str = tx["timestamp"][:10]
+        action = tx["action"].upper()
+        lines.append(
+            f"#{i} {date_str}  {action}  "
+            f"€{tx['amount_eur']:.2f} @ €{tx['price_per_unit']:.4f} "
+            f"→ {tx['units']:.4f} units"
+        )
+
+    await send_message(session, bot_token, chat_id, "\n".join(lines))
+
+
+async def _portfolio_delete(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, name: str, state,
+) -> None:
+    """Ask for confirmation before deactivating a portfolio."""
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ No active portfolio named <code>{_h(name)}</code>.",
+            )
+            return
+    finally:
+        conn.close()
+
+    state.pending_confirm = {"type": "delete_portfolio", "name": name}
+    await send_message(
+        session, bot_token, chat_id,
+        f"⚠️ Delete portfolio <b>{_h(name)}</b>? This cannot be undone.\n"
+        f"Transactions and history are preserved.\n"
+        f"Send <code>/confirm</code> to proceed.",
+    )
+
+
+async def _portfolio_chart(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, name: str, timeframe: str = "30d",
+) -> None:
+    """/portfolio chart <name> [7d|30d|90d|all]"""
+    loop = asyncio.get_running_loop()
+
+    hours = TIMEFRAME_HOURS.get(timeframe, 30 * 24)
+
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.",
+            )
+            return
+        p = dict(p)
+        snapshots = get_portfolio_snapshots(conn, p["id"], hours=hours)
+        txs = get_transactions(conn, p["id"])
+    finally:
+        conn.close()
+
+    if len(snapshots) < 2:
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Not enough snapshot history yet for <b>{_h(name)}</b> ({timeframe}).\n"
+            "<i>Snapshots are taken hourly — check back later.</i>",
+        )
+        return
+
+    product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+    chart_bytes = await loop.run_in_executor(
+        None,
+        lambda: generate_portfolio_chart(
+            snapshots, txs,
+            title=f"{_h(name)}  ·  {_h(product_name)}  ·  {timeframe}",
+        ),
+    )
+
+    if chart_bytes:
+        await send_photo(
+            session, bot_token, chat_id, chart_bytes,
+            caption=f"📈 Portfolio: {name} — last {timeframe}",
+        )
+    else:
+        await send_message(
+            session, bot_token, chat_id,
+            "⚠️ Chart generation failed.",
+        )
+
+
+async def _portfolio_stats(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, name: str,
+) -> None:
+    """/portfolio stats <name>"""
+    loop = asyncio.get_running_loop()
+
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.",
+            )
+            return
+        p = dict(p)
+    finally:
+        conn.close()
+
+    ticker_primary = p["ticker"]
+    ticker_fallback = PRODUCT_TICKERS.get(p["product"], (ticker_primary, ticker_primary))[1]
+
+    price, used_ticker, is_stale, _ = await loop.run_in_executor(
+        None, lambda: fetch_etp_price(ticker_primary, ticker_fallback)
+    )
+
+    if price is None:
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Could not fetch price for <code>{_h(ticker_primary)}</code>.",
+        )
+        return
+
+    conn = get_connection(db_path)
+    try:
+        stats = get_portfolio_stats(conn, p["id"], price)
+    finally:
+        conn.close()
+
+    pos = stats["position"]
+    product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+    sep = "─" * 25
+    pnl_sign = "+" if stats["pnl_eur"] >= 0 else ""
+    price_vs_cost = ((price - pos["avg_cost"]) / pos["avg_cost"] * 100) if pos["avg_cost"] else 0.0
+    price_vs_sign = "+" if price_vs_cost >= 0 else ""
+
+    lines = [
+        f"📊 <b>Statistics: {_h(name)}</b>",
+        sep,
+        f"Product:   {_h(product_name)} (<code>{_h(used_ticker)}</code>)",
+        f"Active since: {stats['active_since']} ({stats['days_active']} days)",
+        "",
+        "💰 <b>Position</b>",
+        f"Total invested:  €{pos['total_invested']:.2f}",
+        f"Total withdrawn: €{pos['total_withdrawn']:.2f}",
+        f"Net invested:    €{pos['net_invested']:.2f}",
+        f"Current value:   €{stats['current_value']:.2f}",
+        "",
+        "📈 <b>Performance</b>",
+        f"P/L (EUR): {pnl_sign}€{stats['pnl_eur']:.2f}",
+        f"P/L (%):   {pnl_sign}{stats['pnl_pct']:.1f}%",
+    ]
+
+    if stats["best_day"]:
+        bd = stats["best_day"]
+        bs = "+" if bd["pnl_eur"] >= 0 else ""
+        lines.append(f"Best day:  {bs}€{bd['pnl_eur']:.2f} ({bs}{bd['pnl_pct']:.1f}%) on {bd['date']}")
+    if stats["worst_day"]:
+        wd = stats["worst_day"]
+        ws = "+" if wd["pnl_eur"] >= 0 else ""
+        lines.append(f"Worst day: {ws}€{wd['pnl_eur']:.2f} ({ws}{wd['pnl_pct']:.1f}%) on {wd['date']}")
+    if stats["max_drawdown"]:
+        dd = stats["max_drawdown"]
+        lines.append(f"Max drawdown: €{dd['pnl_eur']:.2f} ({dd['pnl_pct']:.1f}%) on {dd['date']}")
+
+    lines += [
+        "",
+        "🛒 <b>DCA Stats</b>",
+        f"Total buys:    {pos['buy_count']}",
+        f"Avg buy price: €{pos['avg_cost']:.4f}",
+    ]
+
+    if stats["lowest_buy_tx"]:
+        lx = stats["lowest_buy_tx"]
+        lines.append(f"Lowest buy:   €{lx['price_per_unit']:.4f} on {lx['timestamp'][:10]}")
+    if stats["highest_buy_tx"]:
+        hx = stats["highest_buy_tx"]
+        lines.append(f"Highest buy:  €{hx['price_per_unit']:.4f} on {hx['timestamp'][:10]}")
+
+    lines += [
+        "",
+        "📦 <b>Holdings</b>",
+        f"Units held:       {pos['total_units']:.4f}",
+        f"Current price:    €{price:.4f}",
+        f"Price vs avg cost: {price_vs_sign}{price_vs_cost:.1f}%",
+    ]
+
+    if is_stale:
+        lines.append("\n⚠️ <i>Price may be stale</i>")
+
+    await send_message(session, bot_token, chat_id, "\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# /portfolios — list all active portfolios
+# ---------------------------------------------------------------------------
+
+async def _cmd_portfolios(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str,
+) -> None:
+    loop = asyncio.get_running_loop()
+
+    conn = get_connection(db_path)
+    try:
+        portfolios = get_active_portfolios(conn)
+        if not portfolios:
+            await send_message(
+                session, bot_token, chat_id,
+                "📋 No active portfolios.\n"
+                "<i>/portfolio create &lt;name&gt; &lt;long|short&gt; to create one.</i>",
+            )
+            return
+        portfolio_data = []
+        for p in portfolios:
+            p = dict(p)
+            pos = get_portfolio_position(conn, p["id"])
+            p["_pos"] = pos
+            portfolio_data.append(p)
+    finally:
+        conn.close()
+
+    sep = "─" * 24
+    lines = [f"📋 <b>Portfolios</b>  ({len(portfolio_data)})\n{sep}"]
+
+    for i, p in enumerate(portfolio_data, 1):
+        pos = p["_pos"]
+        product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+
+        # Fetch price for P/L (use cache — fast if recently fetched)
+        ticker_primary = p["ticker"]
+        ticker_fallback = PRODUCT_TICKERS.get(p["product"], (ticker_primary, ticker_primary))[1]
+        price, _, is_stale, _ = await loop.run_in_executor(
+            None, lambda tp=ticker_primary, tf=ticker_fallback: fetch_etp_price(tp, tf)
+        )
+
+        if price is not None and pos["net_invested"] > 0:
+            current_value = pos["total_units"] * price
+            pnl_pct = (current_value - pos["net_invested"]) / pos["net_invested"] * 100
+            pnl_sign = "+" if pnl_pct >= 0 else ""
+            value_str = f"€{current_value:.2f} ({pnl_sign}{pnl_pct:.1f}%)"
+        elif pos["total_units"] == 0:
+            value_str = "0 units"
+        else:
+            value_str = "€? (price unavailable)"
+
+        lines.append(f"{i}. <b>{_h(p['name'])}</b>  —  {_h(product_name)}  —  {value_str}")
+
+    await send_message(session, bot_token, chat_id, "\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# /portfolio dispatcher
+# ---------------------------------------------------------------------------
+
+async def _cmd_portfolio(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, args: list[str], state,
+) -> None:
+    """Route /portfolio subcommands."""
+    if not args:
+        await send_message(
+            session, bot_token, chat_id,
+            "📁 <b>/portfolio</b> — subcommands:\n"
+            "  <code>/portfolio create &lt;name&gt; &lt;long|short&gt;</code>\n"
+            "  <code>/portfolio &lt;name&gt;</code>          — view state\n"
+            "  <code>/portfolio history &lt;name&gt;</code>\n"
+            "  <code>/portfolio chart &lt;name&gt; [7d|30d|90d|all]</code>\n"
+            "  <code>/portfolio stats &lt;name&gt;</code>\n"
+            "  <code>/portfolio delete &lt;name&gt;</code>",
+        )
+        return
+
+    sub = args[0].lower()
+
+    if sub == "create":
+        await _portfolio_create(db_path, session, bot_token, chat_id, args[1:])
+    elif sub == "history":
+        if len(args) < 2:
+            await send_message(session, bot_token, chat_id,
+                               "⚠️ Usage: <code>/portfolio history &lt;name&gt;</code>")
+            return
+        await _portfolio_history(db_path, session, bot_token, chat_id, args[1].lower())
+    elif sub == "delete":
+        if len(args) < 2:
+            await send_message(session, bot_token, chat_id,
+                               "⚠️ Usage: <code>/portfolio delete &lt;name&gt;</code>")
+            return
+        await _portfolio_delete(db_path, session, bot_token, chat_id, args[1].lower(), state)
+    elif sub == "chart":
+        if len(args) < 2:
+            await send_message(session, bot_token, chat_id,
+                               "⚠️ Usage: <code>/portfolio chart &lt;name&gt; [7d|30d|90d|all]</code>")
+            return
+        timeframe = args[2].lower() if len(args) >= 3 else "30d"
+        if timeframe not in TIMEFRAME_HOURS:
+            timeframe = "30d"
+        await _portfolio_chart(db_path, session, bot_token, chat_id, args[1].lower(), timeframe)
+    elif sub == "stats":
+        if len(args) < 2:
+            await send_message(session, bot_token, chat_id,
+                               "⚠️ Usage: <code>/portfolio stats &lt;name&gt;</code>")
+            return
+        await _portfolio_stats(db_path, session, bot_token, chat_id, args[1].lower())
+    else:
+        # Treat as portfolio name
+        await _portfolio_show(db_path, session, bot_token, chat_id, sub)
+
+
+# ---------------------------------------------------------------------------
+# /buy and /sell
+# ---------------------------------------------------------------------------
+
+async def _cmd_buy(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, args: list[str],
+) -> None:
+    """/buy <portfolio-name> <amount>"""
+    if len(args) < 2:
+        await send_message(
+            session, bot_token, chat_id,
+            "⚠️ Usage: <code>/buy &lt;portfolio-name&gt; &lt;amount&gt;</code>\n"
+            "Example: <code>/buy hormuz-short 100</code>",
+        )
+        return
+
+    loop = asyncio.get_running_loop()
+    name = args[0].lower()
+
+    try:
+        amount = float(args[1])
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await send_message(session, bot_token, chat_id,
+                           f"❌ Invalid amount <code>{_h(args[1])}</code>.")
+        return
+
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.\n"
+                f"<i>Create it first: /portfolio create {_h(name)} long|short</i>",
+            )
+            return
+        p = dict(p)
+        pos_before = get_portfolio_position(conn, p["id"])
+    finally:
+        conn.close()
+
+    ticker_primary = p["ticker"]
+    ticker_fallback = PRODUCT_TICKERS.get(p["product"], (ticker_primary, ticker_primary))[1]
+    price, used_ticker, is_stale, fetched_at = await loop.run_in_executor(
+        None, lambda: fetch_etp_price(ticker_primary, ticker_fallback)
+    )
+
+    if price is None:
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Could not fetch price for <code>{_h(ticker_primary)}</code>. "
+            "Cannot record buy without a valid price.",
+        )
+        return
+
+    if is_stale:
+        age_min = 0
+        if fetched_at:
+            age_min = int((datetime.now(timezone.utc) - fetched_at).total_seconds() / 60)
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Price is stale ({age_min}min old). Buy aborted — try again when price is fresh.",
+        )
+        return
+
+    units = amount / price
+
+    conn = get_connection(db_path)
+    try:
+        with transaction(conn):
+            insert_transaction(
+                conn,
+                portfolio_id=p["id"],
+                action="buy",
+                amount_eur=amount,
+                price_per_unit=price,
+                units=units,
+            )
+        pos_after = get_portfolio_position(conn, p["id"])
+    finally:
+        conn.close()
+
+    product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+    total_value = pos_after["total_units"] * price
+    pnl_eur = total_value - pos_after["net_invested"]
+    pnl_pct = (pnl_eur / pos_after["net_invested"] * 100) if pos_after["net_invested"] > 0 else 0.0
+    pnl_sign = "+" if pnl_eur >= 0 else ""
+
+    await send_message(
+        session, bot_token, chat_id,
+        f"✅ Bought €{amount:.2f} of {_h(product_name)} @ €{price:.4f} "
+        f"→ {units:.4f} units\n"
+        f"Portfolio <b>{_h(name)}</b>: {pos_after['total_units']:.4f} units | "
+        f"Avg cost: €{pos_after['avg_cost']:.4f} | "
+        f"Value: €{total_value:.2f} ({pnl_sign}€{pnl_eur:.2f}, {pnl_sign}{pnl_pct:.1f}%)",
+    )
+    logger.info("Buy recorded: portfolio=%s €%.2f @ €%.4f = %.4f units", name, amount, price, units)
+
+
+async def _cmd_sell(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, args: list[str],
+) -> None:
+    """/sell <portfolio-name> <amount|all>"""
+    if len(args) < 2:
+        await send_message(
+            session, bot_token, chat_id,
+            "⚠️ Usage: <code>/sell &lt;portfolio-name&gt; &lt;amount|all&gt;</code>\n"
+            "Example: <code>/sell hormuz-short 50</code>  or  <code>/sell hormuz-short all</code>",
+        )
+        return
+
+    loop = asyncio.get_running_loop()
+    name = args[0].lower()
+    amount_raw = args[1].lower()
+    sell_all = (amount_raw == "all")
+
+    if not sell_all:
+        try:
+            amount = float(amount_raw)
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            await send_message(session, bot_token, chat_id,
+                               f"❌ Invalid amount <code>{_h(amount_raw)}</code>.")
+            return
+
+    conn = get_connection(db_path)
+    try:
+        p = get_portfolio_by_name(conn, name)
+        if not p or not p["active"]:
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Portfolio <code>{_h(name)}</code> not found.",
+            )
+            return
+        p = dict(p)
+        pos = get_portfolio_position(conn, p["id"])
+    finally:
+        conn.close()
+
+    if pos["total_units"] <= 0:
+        await send_message(
+            session, bot_token, chat_id,
+            f"❌ Portfolio <b>{_h(name)}</b> has no units to sell.",
+        )
+        return
+
+    ticker_primary = p["ticker"]
+    ticker_fallback = PRODUCT_TICKERS.get(p["product"], (ticker_primary, ticker_primary))[1]
+    price, used_ticker, is_stale, fetched_at = await loop.run_in_executor(
+        None, lambda: fetch_etp_price(ticker_primary, ticker_fallback)
+    )
+
+    if price is None:
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Could not fetch price for <code>{_h(ticker_primary)}</code>.",
+        )
+        return
+
+    if is_stale:
+        age_min = 0
+        if fetched_at:
+            age_min = int((datetime.now(timezone.utc) - fetched_at).total_seconds() / 60)
+        await send_message(
+            session, bot_token, chat_id,
+            f"⚠️ Price is stale ({age_min}min old). Sell aborted — try again when price is fresh.",
+        )
+        return
+
+    if sell_all:
+        units_to_sell = pos["total_units"]
+        amount = units_to_sell * price
+    else:
+        units_to_sell = amount / price  # type: ignore[assignment]
+        if units_to_sell > pos["total_units"] + 1e-9:
+            current_value = pos["total_units"] * price
+            await send_message(
+                session, bot_token, chat_id,
+                f"❌ Cannot sell €{amount:.2f} — you only hold "
+                f"{pos['total_units']:.4f} units worth €{current_value:.2f}.\n"
+                f"<i>Use /sell {_h(name)} all to sell everything.</i>",
+            )
+            return
+
+    product_name = PRODUCT_NAMES.get(p["product"], p["product"])
+
+    conn = get_connection(db_path)
+    try:
+        with transaction(conn):
+            insert_transaction(
+                conn,
+                portfolio_id=p["id"],
+                action="sell",
+                amount_eur=amount,
+                price_per_unit=price,
+                units=units_to_sell,
+            )
+        pos_after = get_portfolio_position(conn, p["id"])
+    finally:
+        conn.close()
+
+    # P/L vs net cost basis
+    cost_of_sold = units_to_sell * pos["avg_cost"]
+    pl_eur = amount - cost_of_sold
+    pl_pct = (pl_eur / cost_of_sold * 100) if cost_of_sold > 0 else 0.0
+    pl_sign = "+" if pl_eur >= 0 else ""
+
+    remaining_str = (
+        f"Portfolio <b>{_h(name)}</b>: 0 units remaining"
+        if pos_after["total_units"] <= 1e-9
+        else f"Portfolio <b>{_h(name)}</b>: {pos_after['total_units']:.4f} units remaining"
+    )
+
+    await send_message(
+        session, bot_token, chat_id,
+        f"💰 Sold {units_to_sell:.4f} units of {_h(product_name)} @ €{price:.4f} "
+        f"→ €{amount:.2f}\n"
+        f"P/L: {pl_sign}€{pl_eur:.2f} ({pl_sign}{pl_pct:.1f}%)\n"
+        f"{remaining_str}",
+    )
+    logger.info("Sell recorded: portfolio=%s %.4f units @ €%.4f = €%.2f", name, units_to_sell, price, amount)
+
+
+# ---------------------------------------------------------------------------
+# /confirm — execute pending confirmation
+# ---------------------------------------------------------------------------
+
+async def _cmd_confirm(
+    db_path: str, session: aiohttp.ClientSession,
+    bot_token: str, chat_id: str, state,
+) -> None:
+    """Execute a pending confirmed action."""
+    if not getattr(state, "pending_confirm", None):
+        await send_message(session, bot_token, chat_id,
+                           "ℹ️ Nothing pending confirmation.")
+        return
+
+    action = state.pending_confirm
+    state.pending_confirm = None
+
+    if action["type"] == "delete_portfolio":
+        name = action["name"]
+        conn = get_connection(db_path)
+        try:
+            p = get_portfolio_by_name(conn, name)
+            if not p or not p["active"]:
+                await send_message(session, bot_token, chat_id,
+                                   f"⚠️ Portfolio <code>{_h(name)}</code> no longer exists.")
+                return
+            with transaction(conn):
+                deactivate_portfolio(conn, p["id"])
+        finally:
+            conn.close()
+
+        await send_message(
+            session, bot_token, chat_id,
+            f"🗑️ Portfolio <b>{_h(name)}</b> deleted. "
+            f"Transaction history is preserved.",
+        )
+        logger.info("Portfolio '%s' deactivated via /confirm", name)
+    else:
+        await send_message(session, bot_token, chat_id,
+                           "⚠️ Unknown pending action — cleared.")
+
+
 async def _cmd_shutdown(
     session: aiohttp.ClientSession,
     bot_token: str,
@@ -738,6 +1510,16 @@ async def handle_update(
         await _cmd_unwatch(db_path, session, bot_token, allowed_chat_id, args)
     elif command == "/editwatch":
         await _cmd_editwatch(db_path, session, bot_token, allowed_chat_id, args)
+    elif command == "/portfolio":
+        await _cmd_portfolio(db_path, session, bot_token, allowed_chat_id, args, state)
+    elif command == "/portfolios":
+        await _cmd_portfolios(db_path, session, bot_token, allowed_chat_id)
+    elif command == "/buy":
+        await _cmd_buy(db_path, session, bot_token, allowed_chat_id, args)
+    elif command == "/sell":
+        await _cmd_sell(db_path, session, bot_token, allowed_chat_id, args)
+    elif command == "/confirm":
+        await _cmd_confirm(db_path, session, bot_token, allowed_chat_id, state)
     elif command == "/idle":
         if cfg is not None:
             await _cmd_idle(session, bot_token, allowed_chat_id, args, state, cfg)

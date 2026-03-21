@@ -127,6 +127,7 @@ def init_db(db_path: str) -> None:
     conn = get_connection(db_path)
     with transaction(conn):
         conn.executescript(SCHEMA)
+        conn.executescript(PORTFOLIO_SCHEMA)
 
         # Migration: add title_hash column to articles if absent
         article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -648,3 +649,192 @@ def update_watch_price(
         "UPDATE price_watches SET target_price = ? WHERE id = ?",
         (new_price, watch_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# Portfolio tracking schema (appended via migration in init_db)
+# ---------------------------------------------------------------------------
+
+PORTFOLIO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS portfolios (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    UNIQUE NOT NULL,
+    ticker     TEXT    NOT NULL,
+    product    TEXT    NOT NULL CHECK(product IN ('long', 'short')),
+    currency   TEXT    NOT NULL DEFAULT 'EUR',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    active     INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    portfolio_id   INTEGER NOT NULL REFERENCES portfolios(id),
+    action         TEXT    NOT NULL CHECK(action IN ('buy', 'sell')),
+    amount_eur     REAL    NOT NULL,
+    price_per_unit REAL    NOT NULL,
+    units          REAL    NOT NULL,
+    timestamp      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    portfolio_id   INTEGER NOT NULL REFERENCES portfolios(id),
+    timestamp      TEXT    NOT NULL DEFAULT (datetime('now')),
+    unit_price     REAL    NOT NULL,
+    total_units    REAL    NOT NULL,
+    total_value    REAL    NOT NULL,
+    total_invested REAL    NOT NULL,
+    pnl_eur        REAL    NOT NULL,
+    pnl_pct        REAL    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_portfolios_active      ON portfolios(active, name);
+CREATE INDEX IF NOT EXISTS idx_transactions_portfolio ON transactions(portfolio_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_snapshots_portfolio    ON portfolio_snapshots(portfolio_id, timestamp);
+"""
+
+
+# ---------------------------------------------------------------------------
+# Portfolios CRUD
+# ---------------------------------------------------------------------------
+
+def insert_portfolio(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    ticker: str,
+    product: str,
+    currency: str = "EUR",
+) -> Optional[int]:
+    """Insert a new portfolio. Returns new id, or None if name already exists."""
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO portfolios (name, ticker, product, currency)
+            VALUES (?, ?, ?, ?)
+            """,
+            (name, ticker, product, currency),
+        )
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def get_portfolio_by_name(
+    conn: sqlite3.Connection, name: str
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM portfolios WHERE name = ?", (name,)
+    ).fetchone()
+
+
+def get_portfolio_by_id(
+    conn: sqlite3.Connection, portfolio_id: int
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM portfolios WHERE id = ?", (portfolio_id,)
+    ).fetchone()
+
+
+def get_active_portfolios(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM portfolios WHERE active = 1 ORDER BY created_at ASC"
+    ).fetchall()
+
+
+def deactivate_portfolio(conn: sqlite3.Connection, portfolio_id: int) -> None:
+    conn.execute(
+        "UPDATE portfolios SET active = 0 WHERE id = ?", (portfolio_id,)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Transactions CRUD
+# ---------------------------------------------------------------------------
+
+def insert_transaction(
+    conn: sqlite3.Connection,
+    *,
+    portfolio_id: int,
+    action: str,
+    amount_eur: float,
+    price_per_unit: float,
+    units: float,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO transactions (portfolio_id, action, amount_eur, price_per_unit, units)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (portfolio_id, action, amount_eur, price_per_unit, units),
+    )
+    return cursor.lastrowid
+
+
+def get_transactions(
+    conn: sqlite3.Connection, portfolio_id: int
+) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM transactions WHERE portfolio_id = ? ORDER BY timestamp ASC",
+        (portfolio_id,),
+    ).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Portfolio snapshots CRUD
+# ---------------------------------------------------------------------------
+
+def insert_portfolio_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    portfolio_id: int,
+    unit_price: float,
+    total_units: float,
+    total_value: float,
+    total_invested: float,
+    pnl_eur: float,
+    pnl_pct: float,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO portfolio_snapshots
+            (portfolio_id, unit_price, total_units, total_value, total_invested, pnl_eur, pnl_pct)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (portfolio_id, unit_price, total_units, total_value, total_invested, pnl_eur, pnl_pct),
+    )
+    return cursor.lastrowid
+
+
+def get_portfolio_snapshots(
+    conn: sqlite3.Connection,
+    portfolio_id: int,
+    hours: Optional[int] = None,
+) -> list[sqlite3.Row]:
+    if hours is not None:
+        return conn.execute(
+            """
+            SELECT * FROM portfolio_snapshots
+            WHERE portfolio_id = ?
+              AND timestamp >= datetime('now', ? || ' hours')
+            ORDER BY timestamp ASC
+            """,
+            (portfolio_id, f"-{hours}"),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM portfolio_snapshots WHERE portfolio_id = ? ORDER BY timestamp ASC",
+        (portfolio_id,),
+    ).fetchall()
+
+
+def get_last_portfolio_snapshot(
+    conn: sqlite3.Connection, portfolio_id: int
+) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT * FROM portfolio_snapshots
+        WHERE portfolio_id = ?
+        ORDER BY timestamp DESC LIMIT 1
+        """,
+        (portfolio_id,),
+    ).fetchone()

@@ -528,7 +528,7 @@ async def _send_narrative_chart(
         logger.debug("Narrative chart skipped: only %d price samples available", len(prices))
         return
 
-    chart_bytes = generate_narrative_chart(prices, narratives, alert_markers=alert_markers)
+    chart_bytes = generate_price_narrative_chart(prices, narratives, alert_markers=alert_markers)
     if not chart_bytes:
         logger.debug("Narrative chart generation returned None")
         return
@@ -782,6 +782,16 @@ async def dispatch_morning_summary(
         )
 
         text = _format_morning_summary(alerts, top_n=top_n)
+
+        # Append portfolio snapshot lines if any portfolios hold units
+        try:
+            from oil_sentinel.portfolio import format_portfolio_morning_lines
+            portfolio_lines = format_portfolio_morning_lines(db_path)
+            if portfolio_lines:
+                text += f"\n\n{'─' * 24}\n💼 <b>Portfolios</b>\n{portfolio_lines}"
+        except Exception as exc:
+            logger.warning("Portfolio morning lines failed: %s", exc)
+
         msg_id = await send_message(session, bot_token, chat_id, text)
 
         if msg_id:

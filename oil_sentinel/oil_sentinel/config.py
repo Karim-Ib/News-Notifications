@@ -88,7 +88,7 @@ def load(config_path: Path) -> Config:
         )
         sys.exit(1)
 
-    raw = configparser.ConfigParser()
+    raw = configparser.ConfigParser(inline_comment_prefixes=("#", ";"))
     raw.read(config_path)
 
     tier1_raw = raw.get("gdelt", "tier1_sources", fallback="reuters.com,bloomberg.com,apnews.com")

@@ -37,6 +37,7 @@ from oil_sentinel.notifications import (
     send_market_alert,
     send_narrative_transition_alert,
 )
+from oil_sentinel.portfolio import take_all_portfolio_snapshots
 from oil_sentinel.scoring import make_gemini_client, score_pending_articles
 
 CONFIG_PATH = Path(__file__).parent / "config.ini"
@@ -133,6 +134,9 @@ class State:
         self.idle_tz: Optional[str] = None       # None=server local; e.g. "Europe/Berlin"
         # Rate limiting
         self.last_chart_request: Optional[datetime] = None
+        # Portfolio tracking
+        self.pending_confirm: Optional[dict] = None      # pending /confirm action
+        self.last_portfolio_snapshot: Optional[datetime] = None  # last hourly snapshot time
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +237,23 @@ async def market_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
                 )
                 if fired:
                     logger.info("%d price watch(es) triggered this poll", fired)
+
+            # Hourly portfolio snapshots
+            now_ts = datetime.now(timezone.utc)
+            if (
+                state.last_portfolio_snapshot is None
+                or (now_ts - state.last_portfolio_snapshot).total_seconds() >= 3600
+            ):
+                try:
+                    n_snaps = await loop.run_in_executor(
+                        None, lambda: take_all_portfolio_snapshots(cfg.db_path)
+                    )
+                    if n_snaps:
+                        logger.info("Took %d portfolio snapshot(s)", n_snaps)
+                    state.last_portfolio_snapshot = now_ts
+                except Exception as exc:
+                    logger.exception("Portfolio snapshot error: %s", exc)
+
         except Exception as exc:
             logger.exception("Market loop error: %s", exc)
         await asyncio.sleep(interval)

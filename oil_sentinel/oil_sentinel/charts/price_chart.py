@@ -202,7 +202,9 @@ def generate_price_chart(
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("$%.2f"))
     _style_axes(ax)
     ax.set_title(title, color=_TITLE, fontsize=10, pad=6, loc="left")
-    ax.set_xlim(times[0], times[-1])
+    # Extend right margin so the price annotation (ha="left" at rightmost point) isn't clipped
+    x_pad = (times[-1] - times[0]) * 0.12
+    ax.set_xlim(times[0], times[-1] + x_pad)
     ax.set_ylim(y_min - y_range * 0.05, y_max + y_range * 0.15)
 
     # ── Marker legend ────────────────────────────────────────────────────────
@@ -330,7 +332,8 @@ def generate_price_narrative_chart(
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("$%.2f"))
     _style_axes(ax)
     ax.set_title(title, color=_TITLE, fontsize=10, pad=6, loc="left")
-    ax.set_xlim(t_start, t_end)
+    x_pad = (t_end - t_start) * 0.12
+    ax.set_xlim(t_start, t_end + x_pad)
     # Extra headroom: two rows of annotations (transition arrows + alert markers)
     ax.set_ylim(y_min - y_range * 0.05, y_max + y_range * 0.22)
 

@@ -34,6 +34,16 @@ from oil_sentinel.db.models import (
     deactivate_watch,
     deactivate_all_watches,
     update_watch_price,
+    insert_portfolio,
+    get_portfolio_by_name,
+    get_portfolio_by_id,
+    get_active_portfolios,
+    deactivate_portfolio,
+    insert_transaction,
+    get_transactions,
+    insert_portfolio_snapshot,
+    get_portfolio_snapshots,
+    get_last_portfolio_snapshot,
 )
 
 __all__ = [
@@ -70,4 +80,14 @@ __all__ = [
     "deactivate_watch",
     "deactivate_all_watches",
     "update_watch_price",
+    "insert_portfolio",
+    "get_portfolio_by_name",
+    "get_portfolio_by_id",
+    "get_active_portfolios",
+    "deactivate_portfolio",
+    "insert_transaction",
+    "get_transactions",
+    "insert_portfolio_snapshot",
+    "get_portfolio_snapshots",
+    "get_last_portfolio_snapshot",
 ]
