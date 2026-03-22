@@ -33,6 +33,7 @@ from oil_sentinel.db import (
     update_article_body,
 )
 from oil_sentinel.ingestion.extractor import fetch_article_text
+from oil_sentinel.sitrep import run_sitrep_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -275,15 +276,22 @@ async def score_pending_articles(
     model: str = "gemini-2.5-flash",
     batch_size: int = 5,
     market_anomaly: bool = False,
+    sitrep_enabled: bool = True,
 ) -> int:
     """
     Pull unscored articles from DB, extract body text, score with Gemini, create alerts.
     Returns number of alerts created.
+
+    When sitrep_enabled is True, each article is first checked against the
+    current situation report.  Duplicate articles are marked skipped without
+    consuming a full Gemini scoring call.
     """
     conn = get_connection(db_path)
     alerts_created = 0
     extract_attempted = 0
     extract_succeeded = 0
+    sitrep_new = 0
+    sitrep_dup = 0
 
     try:
         rows = get_unscored_articles(conn, limit=batch_size)
@@ -295,6 +303,24 @@ async def score_pending_articles(
 
         for row in rows:
             article = dict(row)
+
+            # ── SitRep dedup (Layer 1) ────────────────────────────────────────
+            # Check against the living situation report BEFORE body extraction
+            # or Gemini scoring.  Uses cached body_text if available; falls back
+            # to title-only.  Fail-open: if sitrep errors, article proceeds.
+            if sitrep_enabled:
+                is_new = await run_sitrep_dedup(db_path, client, article, model=model)
+                if not is_new:
+                    sitrep_dup += 1
+                    with transaction(conn):
+                        mark_article_scored(conn, article["id"], skipped=True)
+                    logger.info(
+                        "SitRep dedup: skipped [%s]",
+                        article.get("title", "")[:80],
+                    )
+                    await asyncio.sleep(1)  # brief pause between Gemini calls
+                    continue
+                sitrep_new += 1
 
             # ── Body text extraction ─────────────────────────────────────────
             # Use cached body_text if already in DB; otherwise fetch now.
@@ -314,7 +340,7 @@ async def score_pending_articles(
                 # Brief pause between HTTP fetches to be polite to news sites
                 await asyncio.sleep(1.5)
 
-            # ── Gemini scoring ───────────────────────────────────────────────
+            # ── Gemini scoring (narrative-key dedup is Layer 2) ──────────────
             # Refresh narrative context before each article so Gemini sees
             # keys generated earlier in this same batch
             recent_narratives = get_recent_narrative_keys(conn, within_hours=12)
@@ -386,6 +412,12 @@ async def score_pending_articles(
                 "Body extraction: %d/%d succeeded (%.0f%%) this batch",
                 extract_succeeded, extract_attempted,
                 100 * extract_succeeded / extract_attempted,
+            )
+
+        if sitrep_enabled and (sitrep_new + sitrep_dup) > 0:
+            logger.info(
+                "SitRep stats this batch: %d new / %d filtered",
+                sitrep_new, sitrep_dup,
             )
     finally:
         conn.close()

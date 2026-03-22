@@ -23,7 +23,7 @@ Three independent loops run concurrently:
 
 | Loop | Interval | What it does |
 |---|---|---|
-| **News** | 15 min (90 min overnight) | Polls GDELT for Iran/Hormuz/OPEC articles, pre-filters, deduplicates, stores |
+| **News** | 15 min (90 min overnight) | Polls GDELT for Iran/Hormuz/OPEC articles, pre-filters, deduplicates, stores; falls back to Google News RSS after 2 consecutive GDELT failures |
 | **Market** | 5 min (paused overnight) | Fetches WTI & Brent futures prices, computes rolling z-scores, flags anomalies, checks price watches |
 | **Scoring** | 2 min | Sends unscored articles to Gemini, creates alerts in DB, recomputes narrative state |
 | **Dispatch** | every 2 min (paused overnight) | Sends qualifying alerts to Telegram immediately; attaches 24h price chart |
@@ -53,15 +53,54 @@ Every immediate alert, market anomaly, and narrative transition also sends a **W
 
 ### Deduplication
 
-The system runs a three-layer dedup pipeline to prevent the same story appearing multiple times a day:
+The system runs a multi-layer dedup pipeline to prevent the same story appearing multiple times a day:
 
 | Layer | Where | Mechanism |
 |---|---|---|
 | **URL hash** | Ingestion | Exact URL SHA-256 — never stores the same article twice |
 | **Title hash** | Ingestion | First 8 normalised words of title — blocks near-identical headlines within 24h |
+| **SitRep** | Pre-scoring | Living situation report compared via Gemini — duplicate coverage is discarded without a full scoring call (see [Situation Report](#situation-report)) |
 | **Narrative context** | Scoring | Recent narrative keys are injected into the Gemini prompt so it reuses the exact same key for follow-up coverage of the same story |
 | **Jaccard similarity** | Scoring | Before creating an alert, word-overlap between the new `narrative_key` and all keys from the last 12h is computed — ≥75% overlap blocks the alert as a duplicate; a direction flip on the same thread bypasses the block |
 | **Dispatch cooldown** | Dispatch | Same `narrative_key` cannot be re-sent for 6 hours even if a new alert slips through |
+
+### Situation Report
+
+The situation report is a living document that summarises what the system already knows across six topic sections:
+
+```
+SITUATION REPORT — Last updated: 2024-03-21 18:00 UTC
+
+MILITARY:   ongoing strikes, casualties, hardware
+HORMUZ STATUS: closure state, ship traffic, toll arrangements
+DIPLOMATIC: negotiations, coalitions, ceasefire proposals
+SUPPLY & ROUTING: OPEC decisions, alternative routes, force majeure
+MARKET CONTEXT: WTI/Brent levels, key price drivers already priced in
+REGIONAL IMPACT: country-specific effects (Pakistan, India, China, …)
+```
+
+**Pre-scoring dedup flow:**
+
+1. Load current report from DB
+2. Send article title + first 2 000 chars of body to Gemini with the report
+3. If the article is **new** (contains specific facts not in the report):
+   - Append the new fact to the appropriate section with a timestamp
+   - Forward article to the regular Gemini scoring pipeline
+4. If the article is **duplicate** (same event, different source):
+   - Mark article as skipped — no scoring call consumed
+   - Log: `SitRep: DUPLICATE — <reason>`
+
+**What counts as new:**
+- Evolution of a known story counts (threat → action, proposal → agreement, unconfirmed → confirmed)
+- Updated numbers count (casualty count revised, specific dollar amount added)
+- Same event reported by a different source does **not** count
+- Opinion / analysis about known events does **not** count
+
+**Compaction:** when the report exceeds 12 000 characters (~3 000 tokens), Gemini compacts it to ~6 000 characters. Entries about the same topic are merged, superseded facts are dropped, and specific numbers/names are preserved. Previous versions are kept in the database for rollback.
+
+**Hourly stats** are logged: `SitRep stats: N new / M filtered in last hour`.
+
+**Telegram:** `/sitrep` sends the current report. `/status` appends it after the standard status block (or sends it as a follow-up if the combined message would exceed 4 096 chars).
 
 ---
 
@@ -76,7 +115,8 @@ oil_sentinel/
 │   │   └── models.py          # SQLite schema + CRUD (articles, alerts, market_data, narrative_states)
 │   ├── ingestion/
 │   │   ├── __init__.py
-│   │   └── gdelt.py           # GDELT DOC API polling & pre-filtering
+│   │   ├── gdelt.py           # GDELT DOC API polling & pre-filtering
+│   │   └── google_news.py     # Google News RSS backup source (feedparser)
 │   ├── market/
 │   │   ├── __init__.py
 │   │   └── poller.py          # yfinance price fetching + z-score anomaly detection
@@ -93,6 +133,7 @@ oil_sentinel/
 │   │   ├── __init__.py
 │   │   ├── tracker.py         # ETP price cache, position calculation, hourly snapshots
 │   │   └── chart.py           # Portfolio value vs invested chart (matplotlib)
+│   ├── sitrep.py              # Situation-report dedup (living doc, Gemini compaction)
 │   └── notifications/
 │       ├── __init__.py
 │       ├── telegram.py        # Alert formatting + Telegram dispatch (including narrative transitions)
@@ -117,7 +158,7 @@ cd oil_sentinel
 pip install -r requirements.txt
 ```
 
-Dependencies: `aiohttp`, `yfinance`, `google-genai`, `trafilatura`, `matplotlib`, `tzdata` (for timezone support on Windows).
+Dependencies: `aiohttp`, `yfinance`, `google-genai`, `trafilatura`, `matplotlib`, `tzdata` (for timezone support on Windows), `feedparser` (for Google News RSS).
 
 ### 2. Configure
 
@@ -183,6 +224,9 @@ overnight_start = 22            # Local server time hour: alerts suppressed, mar
 overnight_end = 9               # Local server time hour: window ends, morning summary fires
 poll_interval_minutes = 90      # GDELT poll interval during overnight window
 morning_summary_hour = 9        # Local server time hour for the overnight briefing (match overnight_end)
+
+[google_news]
+enabled = true                  # Enable Google News RSS fallback (triggered after 2 consecutive GDELT failures)
 ```
 
 ---
@@ -272,7 +316,7 @@ Narrative state is also shown as context in the header of every regular immediat
 
 ## Database
 
-SQLite with WAL mode. Seven tables:
+SQLite with WAL mode. Eight tables:
 
 - **`articles`** — raw GDELT records, deduped by URL hash and 8-word title hash
 - **`market_data`** — 5-min price samples with z-scores
@@ -282,6 +326,7 @@ SQLite with WAL mode. Seven tables:
 - **`portfolios`** — named ETP tracking entries (`long` → 3OIL.MI, `short` → 3OIS.MI)
 - **`transactions`** — buy/sell records with EUR amount, price per unit, and units
 - **`portfolio_snapshots`** — hourly snapshots of portfolio value and P/L for charting and statistics
+- **`situation_reports`** — versioned situation report rows; `previous_id` links to prior version for rollback; `compacted_from` is set when a row was created by compaction
 
 Schema migrations run automatically on startup.
 
@@ -307,6 +352,7 @@ The bot responds to slash commands sent directly in the configured Telegram chat
 | `/idle auto` | Return to automatic time-based switching |
 | `/idle tz Europe/Berlin` | Set the timezone used for the overnight window (returns to auto) |
 | `/idle tz local` | Revert to server local time |
+| `/sitrep` | Show the current situation report (all six sections) |
 | `/help` | Command list |
 
 ### Portfolio commands

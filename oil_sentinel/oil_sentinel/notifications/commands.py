@@ -35,6 +35,7 @@ from oil_sentinel.db import (
     get_active_portfolios,
     get_active_watches,
     get_connection,
+    get_current_sitrep,
     get_narrative_history,
     get_portfolio_by_name,
     get_portfolio_snapshots,
@@ -89,6 +90,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("buy",        "Record a buy  e.g. /buy hormuz-short 100"),
     ("sell",       "Record a sell  e.g. /sell hormuz-short 100  or  all"),
     ("idle",       "Show or change idle mode and timezone"),
+    ("sitrep",     "Show the current situation report"),
     ("help",       "List all available commands"),
 ]
 
@@ -107,7 +109,8 @@ _HELP_TEXT = (
     "  /idle off         — force normal mode\n"
     "  /idle auto        — return to automatic (time-based)\n"
     "  /idle tz &lt;name&gt;   — set timezone  e.g. <code>Europe/Berlin</code>\n"
-    "  /idle tz local    — revert to server local time"
+    "  /idle tz local    — revert to server local time\n"
+    "\n<code>/sitrep</code>  — current situation report (also appended to /status)"
 )
 
 # All commands that the dispatcher will route (public + hidden)
@@ -337,7 +340,7 @@ async def _cmd_status(
         narrative_line = "📊 Narrative: <i>not yet computed</i>"
 
     sep = "─" * 24
-    text = (
+    status_text = (
         f"🛢 <b>OIL SENTINEL — Status</b>  •  <i>{now_str}</i>\n"
         f"{sep}\n"
         f"{price_line}\n"
@@ -346,7 +349,81 @@ async def _cmd_status(
         f"{tz_line}\n"
         f"{narrative_line}"
     )
-    await send_message(session, bot_token, chat_id, text)
+
+    # Load current situation report
+    conn = get_connection(db_path)
+    try:
+        sitrep_row = get_current_sitrep(conn)
+    finally:
+        conn.close()
+
+    if sitrep_row:
+        import html as _html
+        sitrep_content = _html.escape(sitrep_row["content"])
+        sitrep_section = (
+            f"\n{sep}\n"
+            f"<b>SITUATION REPORT</b>  v{sitrep_row['version']}\n"
+            f"{sep}\n"
+            f"<pre>{sitrep_content}</pre>"
+        )
+        combined = status_text + sitrep_section
+        if len(combined) <= 4096:
+            await send_message(session, bot_token, chat_id, combined)
+        else:
+            # Status fits; send sitrep as a follow-up
+            await send_message(session, bot_token, chat_id, status_text)
+            await _send_sitrep_message(session, bot_token, chat_id, sitrep_row)
+    else:
+        await send_message(session, bot_token, chat_id, status_text)
+
+
+async def _send_sitrep_message(
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    sitrep_row,
+) -> None:
+    """Send the situation report as one or two Telegram messages (4096-char limit)."""
+    import html as _html
+    sep = "─" * 24
+    header = (
+        f"<b>SITUATION REPORT</b>  v{sitrep_row['version']}\n"
+        f"<i>~{sitrep_row['token_estimate']} tokens</i>\n"
+        f"{sep}\n"
+    )
+    body = _html.escape(sitrep_row["content"])
+    full = header + f"<pre>{body}</pre>"
+
+    if len(full) <= 4096:
+        await send_message(session, bot_token, chat_id, full)
+    else:
+        # Split: header + first chunk, then remainder
+        max_body = 4096 - len(header) - len("<pre></pre>") - 20  # safety margin
+        part1 = header + f"<pre>{body[:max_body]}</pre>"
+        part2 = f"<pre>{body[max_body:]}</pre>"
+        await send_message(session, bot_token, chat_id, part1)
+        await send_message(session, bot_token, chat_id, part2)
+
+
+async def _cmd_sitrep(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+) -> None:
+    """/sitrep — send the current situation report directly."""
+    conn = get_connection(db_path)
+    try:
+        sitrep_row = get_current_sitrep(conn)
+    finally:
+        conn.close()
+
+    if not sitrep_row:
+        await send_message(session, bot_token, chat_id,
+                           "⚠️ No situation report yet — starts building after the first article is processed.")
+        return
+
+    await _send_sitrep_message(session, bot_token, chat_id, sitrep_row)
 
 
 async def _cmd_watch(
@@ -1527,6 +1604,8 @@ async def handle_update(
         else:
             await send_message(session, bot_token, allowed_chat_id,
                                "⚠️ /idle is unavailable — config not loaded.")
+    elif command == "/sitrep":
+        await _cmd_sitrep(db_path, session, bot_token, allowed_chat_id)
     elif command == "/help":
         await send_message(session, bot_token, allowed_chat_id, _HELP_TEXT)
     elif command == "/shutdown_bot":

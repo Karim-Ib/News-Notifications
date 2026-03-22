@@ -62,6 +62,11 @@ class IdleConfig:
 
 
 @dataclass
+class GoogleNewsConfig:
+    enabled: bool
+
+
+@dataclass
 class LoggingConfig:
     level: str
     file: str
@@ -76,6 +81,7 @@ class Config:
     telegram: TelegramConfig
     logging: LoggingConfig
     idle: IdleConfig
+    google_news: GoogleNewsConfig
 
 
 def load(config_path: Path) -> Config:
@@ -139,5 +145,8 @@ def load(config_path: Path) -> Config:
             overnight_end=raw.getint("idle", "overnight_end", fallback=9),
             poll_interval_minutes=raw.getint("idle", "poll_interval_minutes", fallback=90),
             morning_summary_hour=raw.getint("idle", "morning_summary_hour", fallback=9),
+        ),
+        google_news=GoogleNewsConfig(
+            enabled=raw.getboolean("google_news", "enabled", fallback=True),
         ),
     )

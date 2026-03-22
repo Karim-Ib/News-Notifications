@@ -65,11 +65,13 @@ def fetch_price(ticker: str) -> Optional[float]:
         tk = yf.Ticker(ticker)
         price = tk.fast_info.get("last_price") or tk.fast_info.get("previous_close")
         if price is None:
-            hist = tk.history(period="1d", interval="1m")
+            # period="1d" returns empty on weekends/holidays; "5d" always has
+            # the last trading day's close regardless of when we poll
+            hist = tk.history(period="5d")
             if hist.empty:
                 logger.warning("No price data for %s", ticker)
                 return None
-            price = float(hist["Close"].iloc[-1])
+            price = float(hist["Close"].dropna().iloc[-1])
         return float(price)
     except Exception as exc:
         logger.error("yfinance error for %s: %s", ticker, exc)

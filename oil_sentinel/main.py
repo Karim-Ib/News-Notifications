@@ -24,6 +24,7 @@ import aiohttp
 from oil_sentinel.config import Config, load as load_config
 from oil_sentinel.db import get_connection, init_db, latest_market_sample
 from oil_sentinel.ingestion import poll_and_store as gdelt_poll
+from oil_sentinel.ingestion.google_news import poll_and_store as google_news_poll
 from oil_sentinel.market import poll_and_store as market_poll, any_anomaly
 from oil_sentinel.narrative import evaluate_narrative
 from oil_sentinel.notifications import (
@@ -39,6 +40,7 @@ from oil_sentinel.notifications import (
 )
 from oil_sentinel.portfolio import take_all_portfolio_snapshots
 from oil_sentinel.scoring import make_gemini_client, score_pending_articles
+from oil_sentinel.sitrep import initialize_sitrep, get_stats_snapshot, reset_stats
 
 CONFIG_PATH = Path(__file__).parent / "config.ini"
 
@@ -143,8 +145,15 @@ class State:
 # Polling loops
 # ---------------------------------------------------------------------------
 
+_GDELT_FAIL_THRESHOLD = 2   # consecutive failures before falling back to Google News
+
+
 async def news_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
-    """Poll GDELT every N minutes (slower during overnight idle window)."""
+    """Poll GDELT every N minutes (slower during overnight idle window).
+
+    If GDELT raises exceptions on _GDELT_FAIL_THRESHOLD consecutive polls and
+    google_news is enabled, falls back to Google News RSS for that cycle.
+    """
     logger = logging.getLogger("news_loop")
     logger.info(
         "News loop started (interval=%dm, idle=%s, overnight=%s)",
@@ -152,6 +161,7 @@ async def news_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -
         cfg.idle.enabled,
         f"{cfg.idle.overnight_start:02d}:00-{cfg.idle.overnight_end:02d}:00 local" if cfg.idle.enabled else "n/a",
     )
+    gdelt_failures = 0
     while True:
         overnight = _is_overnight(cfg, state)
 
@@ -186,9 +196,23 @@ async def news_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -
                 max_age_hours=cfg.gdelt.max_article_age_hours,
                 tier1_domains=cfg.gdelt.tier1_domains,
             )
+            gdelt_failures = 0
             logger.info("GDELT poll done: %d new articles%s", n, " [idle]" if overnight else "")
         except Exception as exc:
             logger.exception("News loop error: %s", exc)
+            gdelt_failures += 1
+            if gdelt_failures >= _GDELT_FAIL_THRESHOLD and cfg.google_news.enabled:
+                logger.warning(
+                    "GDELT failed %d consecutive times — falling back to Google News RSS",
+                    gdelt_failures,
+                )
+                try:
+                    gn = await google_news_poll(cfg.db_path, session)
+                    if gn:
+                        logger.info("Google News fallback: %d new articles", gn)
+                except Exception as gn_exc:
+                    logger.exception("Google News fallback error: %s", gn_exc)
+
         await asyncio.sleep(interval)
 
 
@@ -268,6 +292,19 @@ def _latest_wti_price(db_path: str) -> Optional[float]:
         conn.close()
 
 
+def _latest_wti_price_sync(db_path: str) -> Optional[float]:
+    return _latest_wti_price(db_path)
+
+
+def _latest_brent_price_sync(db_path: str) -> Optional[float]:
+    conn = get_connection(db_path)
+    try:
+        row = latest_market_sample(conn, "BZ=F")
+        return float(row["price"]) if row else None
+    finally:
+        conn.close()
+
+
 async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
     """Score pending articles, evaluate narrative trend, and dispatch alerts every 2 minutes."""
     interval = 120
@@ -283,6 +320,7 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
     client = make_gemini_client(cfg.gemini.api_key)
     loop = asyncio.get_running_loop()
     logger.info("Scoring loop started (interval=%ds)", interval)
+    _last_sitrep_stats_log: Optional[datetime] = None
 
     while True:
         try:
@@ -337,6 +375,19 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
                 )
                 if sent:
                     logger.info("Sent %d Telegram alert batch(es)", sent)
+            # Hourly sitrep stats log
+            now_ts = datetime.now(timezone.utc)
+            if (
+                _last_sitrep_stats_log is None
+                or (now_ts - _last_sitrep_stats_log).total_seconds() >= 3600
+            ):
+                snap = reset_stats()
+                logger.info(
+                    "SitRep stats: %d new / %d filtered in last hour",
+                    snap["new"], snap["dup"],
+                )
+                _last_sitrep_stats_log = now_ts
+
         except Exception as exc:
             logger.exception("Scoring loop error: %s", exc)
         await asyncio.sleep(interval)
@@ -463,6 +514,11 @@ async def main() -> None:
 
     init_db(cfg.db_path)
     logger.info("Database initialised at %s", cfg.db_path)
+
+    # Seed the situation report if this is the first run
+    _seed_wti = _latest_wti_price_sync(cfg.db_path)
+    _seed_brent = _latest_brent_price_sync(cfg.db_path)
+    initialize_sitrep(cfg.db_path, wti_price=_seed_wti, brent_price=_seed_brent)
 
     state = State()
 

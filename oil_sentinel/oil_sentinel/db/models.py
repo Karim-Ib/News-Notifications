@@ -128,6 +128,7 @@ def init_db(db_path: str) -> None:
     with transaction(conn):
         conn.executescript(SCHEMA)
         conn.executescript(PORTFOLIO_SCHEMA)
+        conn.executescript(SITREP_SCHEMA)
 
         # Migration: add title_hash column to articles if absent
         article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -655,6 +656,20 @@ def update_watch_price(
 # Portfolio tracking schema (appended via migration in init_db)
 # ---------------------------------------------------------------------------
 
+SITREP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS situation_reports (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    content          TEXT    NOT NULL,
+    token_estimate   INTEGER NOT NULL DEFAULT 0,
+    version          INTEGER NOT NULL DEFAULT 1,
+    previous_id      INTEGER REFERENCES situation_reports(id),
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    compacted_from   INTEGER             -- NULL normally; set when created by compaction
+);
+
+CREATE INDEX IF NOT EXISTS idx_sitrep_version ON situation_reports(version);
+"""
+
 PORTFOLIO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS portfolios (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -838,3 +853,38 @@ def get_last_portfolio_snapshot(
         """,
         (portfolio_id,),
     ).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Situation report CRUD
+# ---------------------------------------------------------------------------
+
+def get_current_sitrep(conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
+    """Return the latest situation report row (highest version), or None."""
+    return conn.execute(
+        "SELECT * FROM situation_reports ORDER BY version DESC LIMIT 1"
+    ).fetchone()
+
+
+def insert_sitrep_row(
+    conn: sqlite3.Connection,
+    *,
+    content: str,
+    previous_id: Optional[int] = None,
+    compacted_from: Optional[int] = None,
+) -> int:
+    """Insert a new situation report version. Returns new row id."""
+    token_estimate = len(content) // 4
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) AS v FROM situation_reports"
+    ).fetchone()
+    version = (row["v"] or 0) + 1
+    cursor = conn.execute(
+        """
+        INSERT INTO situation_reports
+            (content, token_estimate, version, previous_id, compacted_from)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (content, token_estimate, version, previous_id, compacted_from),
+    )
+    return cursor.lastrowid
