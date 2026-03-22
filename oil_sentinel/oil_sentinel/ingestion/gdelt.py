@@ -154,7 +154,7 @@ async def fetch_gdelt_articles(
                     logger.warning("GDELT JSON parse error: %s | body[:200]: %s", exc, raw_text[:200])
                     data = {}
                 break
-        except aiohttp.ClientError as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             wait = 10 * (2 ** attempt)
             logger.error("GDELT fetch error (attempt %d): %s -- retrying in %ds", attempt + 1, exc, wait)
             await asyncio.sleep(wait)

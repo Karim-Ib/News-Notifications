@@ -30,6 +30,7 @@ Compaction
   structure, timestamps, and key facts.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -242,25 +243,32 @@ async def _call_gemini_dedup(
         max_output_tokens=512,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
-    try:
-        response = await client.aio.models.generate_content(
-            model=model, contents=prompt, config=config,
-        )
-        text = response.text.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            text = "\n".join(ln for ln in lines if not ln.startswith("```")).strip()
-        result = json.loads(text)
-        if "is_new" not in result or "reasoning" not in result:
-            logger.warning("SitRep dedup: missing keys in response: %s", text[:200])
+    for attempt in range(3):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model, contents=prompt, config=config,
+            )
+            text = response.text.strip()
+            if text.startswith("```"):
+                lines = text.splitlines()
+                text = "\n".join(ln for ln in lines if not ln.startswith("```")).strip()
+            result = json.loads(text)
+            if "is_new" not in result or "reasoning" not in result:
+                logger.warning("SitRep dedup: missing keys in response: %s", text[:200])
+                return None
+            return result
+        except json.JSONDecodeError as exc:
+            logger.warning("SitRep dedup: JSON parse error: %s", exc)
             return None
-        return result
-    except json.JSONDecodeError as exc:
-        logger.warning("SitRep dedup: JSON parse error: %s", exc)
-        return None
-    except Exception as exc:
-        logger.warning("SitRep dedup: Gemini error: %s", exc)
-        return None
+        except Exception as exc:
+            msg = str(exc)
+            if ("503" in msg or "unavailable" in msg.lower()) and attempt < 2:
+                logger.warning("SitRep dedup: Gemini 503 (attempt %d/3), retrying in 20s", attempt + 1)
+                await asyncio.sleep(20)
+                continue
+            logger.warning("SitRep dedup: Gemini error: %s", exc)
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -296,16 +304,23 @@ async def _call_gemini_compact(
         max_output_tokens=4096,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
-    try:
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=_COMPACT_PROMPT.format(content=content),
-            config=config,
-        )
-        return response.text.strip() or None
-    except Exception as exc:
-        logger.warning("SitRep: compaction Gemini error: %s", exc)
-        return None
+    for attempt in range(3):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=_COMPACT_PROMPT.format(content=content),
+                config=config,
+            )
+            return response.text.strip() or None
+        except Exception as exc:
+            msg = str(exc)
+            if ("503" in msg or "unavailable" in msg.lower()) and attempt < 2:
+                logger.warning("SitRep compaction: Gemini 503 (attempt %d/3), retrying in 20s", attempt + 1)
+                await asyncio.sleep(20)
+                continue
+            logger.warning("SitRep: compaction Gemini error: %s", exc)
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------

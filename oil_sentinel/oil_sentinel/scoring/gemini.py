@@ -37,7 +37,7 @@ from oil_sentinel.sitrep import run_sitrep_dedup
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\>
+SYSTEM_PROMPT = """\
 You are a neutral crude-oil market analyst. Your job is to score news articles \
 for their directional impact on oil prices. You must be equally rigorous for \
 bullish AND bearish signals — do not default to bullish.
@@ -147,6 +147,12 @@ USER_TEMPLATE = (
 
 _MAX_RETRIES = 3
 _BASE_RETRY_DELAY = 40  # seconds -- matches free-tier RPM window
+_503_RETRY_DELAY = 20   # seconds -- model overloaded, usually clears quickly
+
+# Returned by score_article when the API is temporarily unavailable (429/503).
+# Signals score_pending_articles to leave the article unscored so it is
+# retried on the next scoring cycle rather than permanently skipped.
+_RETRY_SENTINEL = object()
 
 
 def _build_prompt(
@@ -232,8 +238,15 @@ async def score_article(
     model: str = "gemini-2.5-flash",
     recent_narratives: Optional[list[str]] = None,
     body_text: Optional[str] = None,
-) -> Optional[dict]:
-    """Call Gemini for one article with retry on 429. Returns parsed dict or None."""
+):
+    """Call Gemini for one article with retry on 429/503.
+
+    Returns:
+        dict            — parsed scoring result
+        None            — permanent failure (bad response, parse error, unexpected error)
+        _RETRY_SENTINEL — transient API unavailability (429/503); caller should
+                          leave the article unscored so it is retried next cycle
+    """
     prompt = _build_prompt(article, recent_narratives or [], body_text=body_text)
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
@@ -261,8 +274,18 @@ async def score_article(
                     )
                     await asyncio.sleep(delay)
                     continue
-                logger.error("Gemini 429 persists after %d retries -- will retry next cycle", _MAX_RETRIES)
-                return None
+                logger.warning("Gemini 429 persists after %d retries — article re-queued", _MAX_RETRIES)
+                return _RETRY_SENTINEL
+            if "503" in msg or "unavailable" in msg.lower():
+                if attempt < _MAX_RETRIES - 1:
+                    logger.warning(
+                        "Gemini 503 unavailable (attempt %d/%d), retrying in %ds",
+                        attempt + 1, _MAX_RETRIES, _503_RETRY_DELAY,
+                    )
+                    await asyncio.sleep(_503_RETRY_DELAY)
+                    continue
+                logger.warning("Gemini 503 persists after %d retries — article re-queued", _MAX_RETRIES)
+                return _RETRY_SENTINEL
             logger.error("Gemini API error: %s", exc)
             return None
 
@@ -361,6 +384,16 @@ async def score_pending_articles(
                 recent_narratives=recent_narratives,
                 body_text=body_text,
             )
+
+            # Transient API unavailability — leave article unscored so the next
+            # scoring cycle picks it up automatically (no mark_article_scored call).
+            if result is _RETRY_SENTINEL:
+                logger.info(
+                    "Gemini unavailable — re-queued: %s",
+                    article.get("title", "")[:60],
+                )
+                await asyncio.sleep(4)
+                continue
 
             with transaction(conn):
                 if result is None:
