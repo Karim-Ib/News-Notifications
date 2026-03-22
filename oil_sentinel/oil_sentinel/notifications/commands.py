@@ -44,6 +44,7 @@ from oil_sentinel.db import (
     get_watch_by_id,
     insert_portfolio,
     insert_transaction,
+    insert_watch,
     latest_market_sample,
     transaction,
     update_watch_price,
