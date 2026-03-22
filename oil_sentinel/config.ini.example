@@ -29,8 +29,11 @@ zscore_window = 288
 zscore_threshold = 2.0
 
 [gemini]
-api_key = API KEY
-model = gemini-2.5-flash-lite
+api_key = YOUR_GEMINI_API_KEY_HERE
+# Full scoring and sitrep compaction (stronger reasoning)
+scoring_model = gemini-2.5-flash
+# Sitrep dedup check (cheap, simple yes/no task) -- omit to use scoring_model for everything
+dedup_model = gemini-2.5-flash-lite
 # Max articles sent to Gemini per scoring cycle
 batch_size = 5
 # Minimum GDELT relevance score to forward to Gemini (0-100)
@@ -57,6 +60,10 @@ overnight_end = 9
 poll_interval_minutes = 90
 # Local server time hour for the morning summary message (should match overnight_end)
 morning_summary_hour = 9
+
+[google_news]
+# Backup news source -- activates after 2 consecutive GDELT failures
+enabled = true
 
 [logging]
 level = INFO

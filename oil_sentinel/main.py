@@ -327,7 +327,8 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
             n = await score_pending_articles(
                 cfg.db_path,
                 client,
-                model=cfg.gemini.model,
+                scoring_model=cfg.gemini.scoring_model,
+                dedup_model=cfg.gemini.dedup_model,
                 batch_size=cfg.gemini.batch_size,
                 market_anomaly=state.market_anomaly,
             )

@@ -39,7 +39,8 @@ class MarketConfig:
 @dataclass
 class GeminiConfig:
     api_key: str
-    model: str
+    scoring_model: str
+    dedup_model: str   # falls back to scoring_model when not set in config
     batch_size: int
 
 
@@ -121,7 +122,15 @@ def load(config_path: Path) -> Config:
         ),
         gemini=GeminiConfig(
             api_key=raw.get("gemini", "api_key", fallback=""),
-            model=raw.get("gemini", "model", fallback="gemini-2.5-flash"),
+            scoring_model=raw.get(
+                "gemini", "scoring_model",
+                fallback=raw.get("gemini", "model", fallback="gemini-2.5-flash"),
+            ),
+            dedup_model=(
+                raw.get("gemini", "dedup_model", fallback="")
+                or raw.get("gemini", "scoring_model",
+                           fallback=raw.get("gemini", "model", fallback="gemini-2.5-flash"))
+            ),
             batch_size=raw.getint("gemini", "batch_size", fallback=5),
         ),
         telegram=TelegramConfig(

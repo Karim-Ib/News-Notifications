@@ -207,9 +207,10 @@ zscore_window = 288             # Rolling window in samples (288 × 5min = 24h)
 zscore_threshold = 2.0          # |z-score| to flag as anomaly
 
 [gemini]
-api_key = ...                   # Required
-model = gemini-2.5-flash        # Model to use for scoring
-batch_size = 5                  # Articles scored per 2-min cycle
+api_key = ...                        # Required
+scoring_model = gemini-2.5-flash     # Full scoring and sitrep compaction
+dedup_model = gemini-2.5-flash-lite  # Sitrep dedup check (omit to use scoring_model)
+batch_size = 5                       # Articles scored per 2-min cycle
 
 [telegram]
 bot_token = ...                 # Required

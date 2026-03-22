@@ -312,11 +312,19 @@ async def _call_gemini_compact(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def _model_label(model: str) -> str:
+    """'gemini-2.5-flash-lite' → 'flash-lite', 'gemini-2.5-flash' → 'flash'."""
+    import re as _re
+    m = _re.match(r'^gemini-[\d.]+-(.+)$', model)
+    return m.group(1) if m else model
+
+
 async def run_sitrep_dedup(
     db_path: str,
     client: genai.Client,
     article: dict,
-    model: str = "gemini-2.5-flash",
+    dedup_model: str = "gemini-2.5-flash",
+    compact_model: str = "gemini-2.5-flash",
 ) -> bool:
     """
     Run the situation-report dedup check for a single article.
@@ -336,19 +344,19 @@ async def run_sitrep_dedup(
             logger.warning("SitRep: no situation report found — skipping dedup for this article")
             return True
 
-        result = await _call_gemini_dedup(client, article, current["content"], model)
+        result = await _call_gemini_dedup(client, article, current["content"], dedup_model)
         if result is None:
             return True  # fail-open
 
-        title = article.get("title", "")[:80]
         is_new: bool = bool(result.get("is_new"))
         new_info: str = result.get("new_information") or ""
         section: str = result.get("section") or "military"
         reasoning: str = result.get("reasoning") or ""
+        dedup_label = _model_label(dedup_model)
 
         if is_new:
             _stats["new"] += 1
-            logger.info("SitRep: NEW — %s — %s", section, new_info[:80])
+            logger.info("SitRep dedup [%s]: NEW — %s — %s", dedup_label, section, new_info[:80])
 
             if new_info:
                 # Step 1: append to the report
@@ -364,7 +372,7 @@ async def run_sitrep_dedup(
                     old_version = fresh2["version"]
                     old_chars = len(fresh2["content"])
                     compact_content = await _call_gemini_compact(
-                        client, fresh2["content"], model
+                        client, fresh2["content"], compact_model
                     )
                     if compact_content:
                         with transaction(conn):
@@ -380,14 +388,15 @@ async def run_sitrep_dedup(
                         new_version_row = get_current_sitrep(conn)
                         new_version = new_version_row["version"] if new_version_row else "?"
                         logger.info(
-                            "SitRep: COMPACTED v%s→v%s (%d→%d chars)",
+                            "SitRep compaction [%s]: v%s→v%s (%d→%d chars)",
+                            _model_label(compact_model),
                             old_version, new_version, old_chars, len(compact_content),
                         )
             return True
 
         else:
             _stats["dup"] += 1
-            logger.info("SitRep: DUPLICATE — %s", reasoning[:80])
+            logger.info("SitRep dedup [%s]: DUPLICATE — %s", dedup_label, reasoning[:80])
             return False
 
     finally:

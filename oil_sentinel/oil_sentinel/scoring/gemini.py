@@ -269,11 +269,18 @@ async def score_article(
     return None
 
 
+def _model_label(model: str) -> str:
+    """'gemini-2.5-flash-lite' → 'flash-lite', 'gemini-2.5-flash' → 'flash'."""
+    m = re.match(r'^gemini-[\d.]+-(.+)$', model)
+    return m.group(1) if m else model
+
+
 async def score_pending_articles(
     db_path: str,
     client: genai.Client,
     *,
-    model: str = "gemini-2.5-flash",
+    scoring_model: str = "gemini-2.5-flash",
+    dedup_model: str = "gemini-2.5-flash",
     batch_size: int = 5,
     market_anomaly: bool = False,
     sitrep_enabled: bool = True,
@@ -309,7 +316,11 @@ async def score_pending_articles(
             # or Gemini scoring.  Uses cached body_text if available; falls back
             # to title-only.  Fail-open: if sitrep errors, article proceeds.
             if sitrep_enabled:
-                is_new = await run_sitrep_dedup(db_path, client, article, model=model)
+                is_new = await run_sitrep_dedup(
+                    db_path, client, article,
+                    dedup_model=dedup_model,
+                    compact_model=scoring_model,
+                )
                 if not is_new:
                     sitrep_dup += 1
                     with transaction(conn):
@@ -346,7 +357,7 @@ async def score_pending_articles(
             recent_narratives = get_recent_narrative_keys(conn, within_hours=12)
 
             result = await score_article(
-                client, article, model=model,
+                client, article, model=scoring_model,
                 recent_narratives=recent_narratives,
                 body_text=body_text,
             )
@@ -395,11 +406,11 @@ async def score_pending_articles(
 
             has_body = "full-text" if body_text else "title-only"
             logger.info(
-                "Scored [%s] mag=%d conf=%.2f dir=%s comp=%.2f [%s] | %s",
-                result["narrative_key"],
+                "Scoring [%s]: mag=%d dir=%s conf=%.2f comp=%.2f [%s] | %s",
+                _model_label(scoring_model),
                 result["magnitude"],
-                result["confidence"],
                 result["direction"],
+                result["confidence"],
                 composite,
                 has_body,
                 article.get("title", "")[:60],
