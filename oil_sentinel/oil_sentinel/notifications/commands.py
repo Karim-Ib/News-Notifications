@@ -52,6 +52,7 @@ from oil_sentinel.db import (
 )
 from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 from oil_sentinel.notifications.telegram import TICKER_LABELS, send_message, send_photo
+from oil_sentinel.accuracy import format_accuracy_report
 from oil_sentinel.portfolio import (
     PRODUCT_NAMES,
     PRODUCT_TICKERS,
@@ -91,6 +92,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("sell",       "Record a sell  e.g. /sell hormuz-short 100  or  all"),
     ("idle",       "Show or change idle mode and timezone"),
     ("sitrep",     "Show the current situation report"),
+    ("accuracy",   "Prediction accuracy stats  /accuracy [7d|30d|all]"),
     ("help",       "List all available commands"),
 ]
 
@@ -1540,6 +1542,31 @@ async def _cmd_shutdown(
     sys.exit(0)
 
 
+async def _cmd_accuracy(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    args: list[str],
+) -> None:
+    """Handle /accuracy [7d|30d|all]"""
+    arg = args[0].lower() if args else "30d"
+    if arg == "7d":
+        window = 7
+    elif arg == "all":
+        window = None
+    else:
+        window = 30
+
+    try:
+        text = format_accuracy_report(db_path, window_days=window)
+    except Exception as exc:
+        logger.exception("Accuracy report error: %s", exc)
+        text = "⚠️ Could not generate accuracy report."
+
+    await send_message(session, bot_token, chat_id, text)
+
+
 # ---------------------------------------------------------------------------
 # Update dispatcher
 # ---------------------------------------------------------------------------
@@ -1604,6 +1631,8 @@ async def handle_update(
         else:
             await send_message(session, bot_token, allowed_chat_id,
                                "⚠️ /idle is unavailable — config not loaded.")
+    elif command == "/accuracy":
+        await _cmd_accuracy(db_path, session, bot_token, allowed_chat_id, args)
     elif command == "/sitrep":
         await _cmd_sitrep(db_path, session, bot_token, allowed_chat_id)
     elif command == "/help":

@@ -133,6 +133,9 @@ oil_sentinel/
 │   │   ├── __init__.py
 │   │   ├── tracker.py         # ETP price cache, position calculation, hourly snapshots
 │   │   └── chart.py           # Portfolio value vs invested chart (matplotlib)
+│   ├── accuracy/
+│   │   ├── __init__.py
+│   │   └── evaluator.py       # Daily prediction accuracy grading + /accuracy report formatter
 │   ├── sitrep.py              # Situation-report dedup (living doc, Gemini compaction)
 │   └── notifications/
 │       ├── __init__.py
@@ -328,8 +331,40 @@ SQLite with WAL mode. Eight tables:
 - **`transactions`** — buy/sell records with EUR amount, price per unit, and units
 - **`portfolio_snapshots`** — hourly snapshots of portfolio value and P/L for charting and statistics
 - **`situation_reports`** — versioned situation report rows; `previous_id` links to prior version for rollback; `compacted_from` is set when a row was created by compaction
+- **`daily_scores`** — one row per UTC date; stores the end-of-day narrative state, net direction, WTI open/close prices, and whether the prediction was correct
 
 Schema migrations run automatically on startup.
+
+---
+
+## Prediction accuracy scoring
+
+Every day at 22:00 UTC the `digest_loop` runs a lightweight accuracy evaluation that grades whether the end-of-day narrative sentiment predicted WTI price direction.
+
+### How grading works
+
+1. The latest narrative state for that UTC date is read from `narrative_states`.
+2. WTI open (first `market_data` sample of the day) and close (last sample) are read.
+3. The `weighted_score` is mapped to a net direction: `bullish` (> +0.5), `bearish` (< −0.5), or `stable`.
+4. The day is graded:
+
+| Condition | Result |
+|---|---|
+| `\|change\|` < 0.3% | Skipped — insufficient market movement |
+| bullish + price up > 0.3% | Correct |
+| bearish + price down > 0.3% | Correct |
+| stable + `\|change\|` < 1.0% | Correct |
+| Any other combination | Wrong |
+
+Results are stored in `daily_scores` (one row per date, idempotent).
+
+### Telegram commands
+
+- `/accuracy` — full report for the last 30 days: overall accuracy %, current win/loss streak, breakdown by narrative state, and a per-day summary of the last 7 days
+- `/accuracy 7d` — last 7 days only
+- `/accuracy all` — all-time history
+
+The morning summary also includes a one-liner (e.g. `📊 Accuracy: 69.2% (18/26) last 30d | streak: ✅✅✅`) once at least 5 graded days exist.
 
 ---
 
@@ -354,6 +389,7 @@ The bot responds to slash commands sent directly in the configured Telegram chat
 | `/idle tz Europe/Berlin` | Set the timezone used for the overnight window (returns to auto) |
 | `/idle tz local` | Revert to server local time |
 | `/sitrep` | Show the current situation report (all six sections) |
+| `/accuracy` | Prediction accuracy stats for the last 30 days (default). `/accuracy 7d` or `/accuracy all` for other windows. |
 | `/help` | Command list |
 
 ### Portfolio commands

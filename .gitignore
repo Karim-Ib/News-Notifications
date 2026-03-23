@@ -28,3 +28,5 @@ oil_sentinel/oil_sentinel.log*
 # OS
 .DS_Store
 Thumbs.db
+/oil_sentinel/generate_audit.py
+/oil_sentinel/oil_sentinel_audit.pdf

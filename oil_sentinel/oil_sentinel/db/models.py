@@ -122,6 +122,29 @@ CREATE INDEX IF NOT EXISTS idx_watches_active ON price_watches(active, ticker);
 """
 
 
+ACCURACY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS daily_scores (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    date               TEXT    UNIQUE NOT NULL,
+    narrative_state    TEXT,
+    weighted_score     REAL,
+    net_direction      TEXT,
+    bull_count         INTEGER NOT NULL DEFAULT 0,
+    bear_count         INTEGER NOT NULL DEFAULT 0,
+    neutral_count      INTEGER NOT NULL DEFAULT 0,
+    avg_magnitude      REAL,
+    wti_open           REAL,
+    wti_close          REAL,
+    wti_change_pct     REAL,
+    prediction_correct INTEGER,
+    skip_reason        TEXT,
+    computed_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_scores_date ON daily_scores(date);
+"""
+
+
 def init_db(db_path: str) -> None:
     """Create all tables and apply any pending column migrations."""
     conn = get_connection(db_path)
@@ -129,6 +152,7 @@ def init_db(db_path: str) -> None:
         conn.executescript(SCHEMA)
         conn.executescript(PORTFOLIO_SCHEMA)
         conn.executescript(SITREP_SCHEMA)
+        conn.executescript(ACCURACY_SCHEMA)
 
         # Migration: add title_hash column to articles if absent
         article_cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
@@ -888,3 +912,74 @@ def insert_sitrep_row(
         (content, token_estimate, version, previous_id, compacted_from),
     )
     return cursor.lastrowid
+
+
+# ---------------------------------------------------------------------------
+# Daily accuracy scores CRUD
+# ---------------------------------------------------------------------------
+
+def insert_daily_score(
+    conn: sqlite3.Connection,
+    *,
+    date: str,
+    narrative_state: Optional[str],
+    weighted_score: Optional[float],
+    net_direction: Optional[str],
+    bull_count: int,
+    bear_count: int,
+    neutral_count: int,
+    avg_magnitude: Optional[float],
+    wti_open: Optional[float],
+    wti_close: Optional[float],
+    wti_change_pct: Optional[float],
+    prediction_correct: Optional[int],
+    skip_reason: Optional[str],
+) -> bool:
+    """Insert a daily score row. Returns True if inserted, False if date already exists."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO daily_scores
+                (date, narrative_state, weighted_score, net_direction,
+                 bull_count, bear_count, neutral_count, avg_magnitude,
+                 wti_open, wti_close, wti_change_pct,
+                 prediction_correct, skip_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                date, narrative_state, weighted_score, net_direction,
+                bull_count, bear_count, neutral_count, avg_magnitude,
+                wti_open, wti_close, wti_change_pct,
+                prediction_correct, skip_reason,
+            ),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False  # date already evaluated
+
+
+def daily_score_exists(conn: sqlite3.Connection, date: str) -> bool:
+    """Return True if a daily_scores row already exists for the given date."""
+    row = conn.execute(
+        "SELECT 1 FROM daily_scores WHERE date = ?", (date,)
+    ).fetchone()
+    return row is not None
+
+
+def get_daily_scores(
+    conn: sqlite3.Connection,
+    days: Optional[int] = 30,
+) -> list[sqlite3.Row]:
+    """Return daily_scores rows newest-first. days=None returns all rows."""
+    if days is not None:
+        return conn.execute(
+            """
+            SELECT * FROM daily_scores
+            WHERE date >= date('now', ? || ' days')
+            ORDER BY date DESC
+            """,
+            (f"-{days}",),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM daily_scores ORDER BY date DESC"
+    ).fetchall()

@@ -792,6 +792,15 @@ async def dispatch_morning_summary(
         except Exception as exc:
             logger.warning("Portfolio morning lines failed: %s", exc)
 
+        # Append accuracy one-liner if enough data exists
+        try:
+            from oil_sentinel.accuracy.evaluator import format_accuracy_oneliner
+            acc_line = format_accuracy_oneliner(db_path)
+            if acc_line:
+                text += f"\n{acc_line}"
+        except Exception as exc:
+            logger.warning("Accuracy one-liner failed: %s", exc)
+
         msg_id = await send_message(session, bot_token, chat_id, text)
 
         if msg_id:

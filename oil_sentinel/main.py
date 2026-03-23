@@ -41,6 +41,7 @@ from oil_sentinel.notifications import (
 from oil_sentinel.portfolio import take_all_portfolio_snapshots
 from oil_sentinel.scoring import make_gemini_client, score_pending_articles
 from oil_sentinel.sitrep import initialize_sitrep, get_stats_snapshot, reset_stats
+from oil_sentinel.accuracy import backfill_accuracy, evaluate_day
 
 CONFIG_PATH = Path(__file__).parent / "config.ini"
 
@@ -139,6 +140,7 @@ class State:
         # Portfolio tracking
         self.pending_confirm: Optional[dict] = None      # pending /confirm action
         self.last_portfolio_snapshot: Optional[datetime] = None  # last hourly snapshot time
+        self.last_accuracy_eval: Optional[str] = None  # YYYY-MM-DD of last daily eval
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +456,23 @@ async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
                     except Exception as exc:
                         logger.exception("Digest loop error: %s", exc)
 
+        # Daily accuracy evaluation at 22:00 UTC
+        now_utc = datetime.now(timezone.utc)
+        if now_utc.hour == 22:
+            today_utc = now_utc.date().isoformat()
+            if state.last_accuracy_eval != today_utc:
+                logger.info("Running daily accuracy evaluation for %s", today_utc)
+                try:
+                    loop = asyncio.get_running_loop()
+                    inserted = await loop.run_in_executor(
+                        None, evaluate_day, cfg.db_path, today_utc
+                    )
+                    if inserted:
+                        logger.info("Daily accuracy eval complete for %s", today_utc)
+                except Exception as exc:
+                    logger.exception("Daily accuracy eval error: %s", exc)
+                state.last_accuracy_eval = today_utc
+
         await asyncio.sleep(60)
 
 
@@ -520,6 +539,14 @@ async def main() -> None:
     _seed_wti = _latest_wti_price_sync(cfg.db_path)
     _seed_brent = _latest_brent_price_sync(cfg.db_path)
     initialize_sitrep(cfg.db_path, wti_price=_seed_wti, brent_price=_seed_brent)
+
+    # Backfill accuracy scores for all historical dates not yet evaluated
+    try:
+        _n_backfill = backfill_accuracy(cfg.db_path)
+        if _n_backfill:
+            logger.info("Accuracy backfill: graded %d historical day(s)", _n_backfill)
+    except Exception as _exc:
+        logger.warning("Accuracy backfill failed: %s", _exc)
 
     state = State()
 

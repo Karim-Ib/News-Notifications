@@ -46,6 +46,9 @@ from oil_sentinel.db.models import (
     insert_portfolio_snapshot,
     get_portfolio_snapshots,
     get_last_portfolio_snapshot,
+    insert_daily_score,
+    daily_score_exists,
+    get_daily_scores,
 )
 
 __all__ = [
@@ -94,4 +97,7 @@ __all__ = [
     "insert_portfolio_snapshot",
     "get_portfolio_snapshots",
     "get_last_portfolio_snapshot",
+    "insert_daily_score",
+    "daily_score_exists",
+    "get_daily_scores",
 ]
