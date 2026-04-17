@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-COMPACTION_THRESHOLD = 12_000   # characters — trigger compaction above this
-COMPACTION_TARGET    =  6_000   # characters — aim for this after compaction
+COMPACTION_THRESHOLD = 8_000   # characters — trigger compaction above this
+COMPACTION_TARGET    = 4_000   # characters — aim for this after compaction
 
 SECTION_HEADERS: dict[str, str] = {
     "military":   "MILITARY:",
@@ -276,17 +276,21 @@ async def _call_gemini_dedup(
 # ---------------------------------------------------------------------------
 
 _COMPACT_PROMPT = """\
-Compact this situation report to roughly half its length.
+Compact this situation report to approximately {target} characters.
 
 Rules:
 - Keep the same section structure (MILITARY, HORMUZ STATUS, DIPLOMATIC, \
 SUPPLY & ROUTING, MARKET CONTEXT, REGIONAL IMPACT)
-- Merge entries about the same topic into single updated statements
-- Drop information that has been superseded by later entries \
-(e.g., 'Iran threatens closure' superseded by 'Iran confirms closure')
-- Keep all timestamps on remaining entries
-- Preserve specific numbers, names, and facts — don't vague them up
-- When in doubt, keep it rather than drop it
+- For each section, keep ONLY the current state of affairs — drop the \
+timeline of how we got here
+- Merge all entries about the same topic into ONE updated statement with \
+the latest timestamp
+- Aggressively drop information that has been superseded by later entries
+- Drop any entry older than 24 hours unless it describes an ongoing \
+condition that hasn't changed
+- Preserve specific numbers, names, and facts in remaining entries
+- The result MUST be under {target} characters — if you're over, cut the \
+least impactful entries
 
 Current report:
 {content}\
@@ -308,10 +312,19 @@ async def _call_gemini_compact(
         try:
             response = await client.aio.models.generate_content(
                 model=model,
-                contents=_COMPACT_PROMPT.format(content=content),
+                contents=_COMPACT_PROMPT.format(
+                    target=COMPACTION_TARGET, content=content
+                ),
                 config=config,
             )
-            return response.text.strip() or None
+            result = response.text.strip() or None
+            if result and len(result) > COMPACTION_THRESHOLD:
+                logger.warning(
+                    "SitRep compaction insufficient: %d chars (target %d) — discarding",
+                    len(result), COMPACTION_TARGET,
+                )
+                return None
+            return result
         except Exception as exc:
             msg = str(exc)
             if ("503" in msg or "unavailable" in msg.lower()) and attempt < 2:
