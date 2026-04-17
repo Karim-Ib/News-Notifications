@@ -408,11 +408,15 @@ async def score_pending_articles(
                 narrative_key = result["narrative_key"]
 
                 # Block duplicate: if a matching narrative already exists in the last
-                # 12h (exact or >=75% word-overlap), skip alert creation.
+                # 3h (exact or >=90% word-overlap), skip alert creation.
+                # Window is intentionally short — sitrep dedup (Layer 1) already
+                # handles "same information seen before"; this layer only prevents
+                # rapid re-sends of the exact same story within a few hours.
                 # Exception: direction flip on the same narrative thread passes through.
                 existing = narrative_exists_recent(
                     conn, narrative_key,
-                    within_hours=12,
+                    within_hours=3,
+                    similarity_threshold=0.90,
                     incoming_direction=result["direction"],
                 )
                 if existing:

@@ -354,32 +354,7 @@ async def _cmd_status(
         f"{tz_line}\n"
         f"{narrative_line}"
     )
-
-    # Load current situation report
-    conn = get_connection(db_path)
-    try:
-        sitrep_row = get_current_sitrep(conn)
-    finally:
-        conn.close()
-
-    if sitrep_row:
-        import html as _html
-        sitrep_content = _html.escape(sitrep_row["content"])
-        sitrep_section = (
-            f"\n{sep}\n"
-            f"<b>SITUATION REPORT</b>  v{sitrep_row['version']}\n"
-            f"{sep}\n"
-            f"<pre>{sitrep_content}</pre>"
-        )
-        combined = status_text + sitrep_section
-        if len(combined) <= 4096:
-            await send_message(session, bot_token, chat_id, combined)
-        else:
-            # Status fits; send sitrep as a follow-up
-            await send_message(session, bot_token, chat_id, status_text)
-            await _send_sitrep_message(session, bot_token, chat_id, sitrep_row)
-    else:
-        await send_message(session, bot_token, chat_id, status_text)
+    await send_message(session, bot_token, chat_id, status_text)
 
 
 async def _send_sitrep_message(
