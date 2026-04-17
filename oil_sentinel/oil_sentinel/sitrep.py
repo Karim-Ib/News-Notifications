@@ -319,10 +319,10 @@ async def _call_gemini_compact(
                 config=config,
             )
             result = response.text.strip() or None
-            if result and len(result) > target_chars:
+            if result and len(result) > COMPACTION_THRESHOLD:
                 logger.warning(
-                    "SitRep compaction insufficient: %d chars (target %d) — discarding",
-                    len(result), target_chars,
+                    "SitRep compaction insufficient: %d chars (threshold %d, target %d) — discarding",
+                    len(result), COMPACTION_THRESHOLD, target_chars,
                 )
                 return None
             return result
