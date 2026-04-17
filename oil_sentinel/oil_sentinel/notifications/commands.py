@@ -53,6 +53,8 @@ from oil_sentinel.db import (
 from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 from oil_sentinel.notifications.telegram import TICKER_LABELS, send_message, send_photo
 from oil_sentinel.accuracy import format_accuracy_report
+from oil_sentinel.scoring.gemini import make_gemini_client
+from oil_sentinel.sitrep import compact_sitrep_to_target
 from oil_sentinel.portfolio import (
     PRODUCT_NAMES,
     PRODUCT_TICKERS,
@@ -92,6 +94,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("sell",       "Record a sell  e.g. /sell hormuz-short 100  or  all"),
     ("idle",       "Show or change idle mode and timezone"),
     ("sitrep",     "Show the current situation report"),
+    ("compact",    "Force SitRep compaction to half current size"),
     ("accuracy",   "Prediction accuracy stats  /accuracy [7d|30d|all]"),
     ("help",       "List all available commands"),
 ]
@@ -1542,6 +1545,60 @@ async def _cmd_shutdown(
     sys.exit(0)
 
 
+async def _cmd_compact(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+    cfg,
+) -> None:
+    """/compact — manually trigger SitRep compaction to half current size."""
+    conn = get_connection(db_path)
+    try:
+        sitrep_row = get_current_sitrep(conn)
+    finally:
+        conn.close()
+
+    if not sitrep_row:
+        await send_message(session, bot_token, chat_id,
+                           "⚠️ No situation report found.")
+        return
+
+    current_len = len(sitrep_row["content"])
+    target = current_len // 2
+
+    await send_message(
+        session, bot_token, chat_id,
+        f"🗜 Compacting SitRep ({current_len} → ~{target} chars)…",
+    )
+
+    if cfg is None:
+        await send_message(session, bot_token, chat_id,
+                           "❌ Compaction failed — config not loaded.")
+        return
+
+    client = make_gemini_client(cfg.gemini.api_key)
+    result = await compact_sitrep_to_target(
+        db_path, client, cfg.gemini.scoring_model, target_chars=target
+    )
+
+    if result is None:
+        await send_message(
+            session, bot_token, chat_id,
+            "❌ Compaction failed — Gemini returned insufficient reduction.",
+        )
+        return
+
+    old_len, new_len, old_version, new_version = result
+    await send_message(
+        session, bot_token, chat_id,
+        f"✅ SitRep compacted: {old_len} → {new_len} chars "
+        f"(v{old_version} → v{new_version})",
+    )
+    logger.info("Manual SitRep compaction: %d→%d chars v%s→v%s",
+                old_len, new_len, old_version, new_version)
+
+
 async def _cmd_accuracy(
     db_path: str,
     session: aiohttp.ClientSession,
@@ -1635,6 +1692,8 @@ async def handle_update(
         await _cmd_accuracy(db_path, session, bot_token, allowed_chat_id, args)
     elif command == "/sitrep":
         await _cmd_sitrep(db_path, session, bot_token, allowed_chat_id)
+    elif command == "/compact":
+        await _cmd_compact(db_path, session, bot_token, allowed_chat_id, cfg)
     elif command == "/help":
         await send_message(session, bot_token, allowed_chat_id, _HELP_TEXT)
     elif command == "/shutdown_bot":

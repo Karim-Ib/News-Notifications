@@ -301,6 +301,7 @@ async def _call_gemini_compact(
     client: genai.Client,
     content: str,
     model: str,
+    target_chars: int = COMPACTION_TARGET,
 ) -> Optional[str]:
     """Ask Gemini to compact the report. Returns compacted text or None."""
     config = types.GenerateContentConfig(
@@ -313,15 +314,15 @@ async def _call_gemini_compact(
             response = await client.aio.models.generate_content(
                 model=model,
                 contents=_COMPACT_PROMPT.format(
-                    target=COMPACTION_TARGET, content=content
+                    target=target_chars, content=content
                 ),
                 config=config,
             )
             result = response.text.strip() or None
-            if result and len(result) > COMPACTION_THRESHOLD:
+            if result and len(result) > target_chars:
                 logger.warning(
                     "SitRep compaction insufficient: %d chars (target %d) — discarding",
-                    len(result), COMPACTION_TARGET,
+                    len(result), target_chars,
                 )
                 return None
             return result
@@ -427,5 +428,60 @@ async def run_sitrep_dedup(
             logger.info("SitRep dedup [%s]: DUPLICATE — %s", dedup_label, reasoning[:80])
             return False
 
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Public: manual compaction (Telegram /compact command)
+# ---------------------------------------------------------------------------
+
+async def compact_sitrep_to_target(
+    db_path: str,
+    client: genai.Client,
+    model: str,
+    target_chars: int,
+) -> Optional[tuple[int, int, int, int]]:
+    """
+    Compact the current situation report to approximately target_chars.
+
+    Returns (old_len, new_len, old_version, new_version) on success,
+    or None if compaction failed or the result was not shorter.
+    """
+    conn = get_connection(db_path)
+    try:
+        current = get_current_sitrep(conn)
+        if current is None:
+            return None
+
+        old_len = len(current["content"])
+        old_version = current["version"]
+
+        compact_content = await _call_gemini_compact(
+            client, current["content"], model, target_chars=target_chars
+        )
+        if not compact_content or len(compact_content) >= old_len:
+            return None
+
+        with transaction(conn):
+            fresh = get_current_sitrep(conn)
+            if fresh is None:
+                return None
+            insert_sitrep_row(
+                conn,
+                content=compact_content,
+                previous_id=fresh["id"],
+                compacted_from=old_version,
+            )
+
+        new_row = get_current_sitrep(conn)
+        new_version = new_row["version"] if new_row else old_version + 1
+        new_len = len(compact_content)
+
+        logger.info(
+            "SitRep manual compaction [%s]: v%s→v%s (%d→%d chars)",
+            _model_label(model), old_version, new_version, old_len, new_len,
+        )
+        return (old_len, new_len, old_version, new_version)
     finally:
         conn.close()
