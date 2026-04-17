@@ -39,12 +39,86 @@ _DIR_SYMBOL: dict[str, str] = {
 }
 
 
+_ESCALATORY_STATES     = {"escalation", "strong_escalation"}
+_DE_ESCALATORY_STATES  = {"de_escalation", "strong_de_escalation"}
+
+
 def _net_direction(weighted_score: float) -> str:
     if weighted_score > 0.5:
         return "bullish"
     if weighted_score < -0.5:
         return "bearish"
     return "stable"
+
+
+def _net_direction_with_context(
+    conn,
+    target_date: str,
+    weighted_score: float,
+) -> str:
+    """
+    Context-aware net direction that carries forward the directional bias when
+    the narrative has decayed from an escalatory/de-escalatory state into stable
+    but the underlying score hasn't reversed sign.
+
+      today stable + prev escalatory  + score >= 0  →  bullish carry-forward
+      today stable + prev de-escalatory + score <= 0  →  bearish carry-forward
+
+    Any other case falls back to _net_direction().
+    """
+    # Latest state for target_date
+    today_row = conn.execute(
+        """
+        SELECT state FROM narrative_states
+        WHERE date(computed_at) = ?
+        ORDER BY computed_at DESC LIMIT 1
+        """,
+        (target_date,),
+    ).fetchone()
+
+    if today_row is None:
+        return _net_direction(weighted_score)
+
+    today_state = str(today_row["state"])
+
+    # If today is already escalatory/de-escalatory, no carry needed.
+    if today_state in _ESCALATORY_STATES or today_state in _DE_ESCALATORY_STATES:
+        return _net_direction(weighted_score)
+
+    # Today is stable — find the most recent state from any prior day.
+    prev_row = conn.execute(
+        """
+        SELECT state FROM narrative_states
+        WHERE date(computed_at) < ?
+        ORDER BY computed_at DESC LIMIT 1
+        """,
+        (target_date,),
+    ).fetchone()
+
+    if prev_row is None:
+        return _net_direction(weighted_score)
+
+    prev_state = str(prev_row["state"])
+
+    # Carry-forward: prev escalatory → bullish unless score has flipped negative.
+    if prev_state in _ESCALATORY_STATES and weighted_score >= 0:
+        net_dir = "bullish"
+        logger.info(
+            "evaluate_day %s: carry-forward %s (prev_state=%s, today_state=%s, score=%.2f)",
+            target_date, net_dir, prev_state, today_state, weighted_score,
+        )
+        return net_dir
+
+    # Carry-forward: prev de-escalatory → bearish unless score has flipped positive.
+    if prev_state in _DE_ESCALATORY_STATES and weighted_score <= 0:
+        net_dir = "bearish"
+        logger.info(
+            "evaluate_day %s: carry-forward %s (prev_state=%s, today_state=%s, score=%.2f)",
+            target_date, net_dir, prev_state, today_state, weighted_score,
+        )
+        return net_dir
+
+    return _net_direction(weighted_score)
 
 
 def _grade(net_direction: str, wti_change_pct: float) -> tuple[Optional[int], Optional[str]]:
@@ -192,7 +266,7 @@ def evaluate_day(db_path: str, target_date: str) -> bool:
 
         # 5. Compute grading
         weighted_score = float(ns_row["weighted_score"])
-        net_dir = _net_direction(weighted_score)
+        net_dir = _net_direction_with_context(conn, target_date, weighted_score)
         prediction_correct, skip_reason = _grade(net_dir, wti_change_pct)
 
         # 6. Insert
