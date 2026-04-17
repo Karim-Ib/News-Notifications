@@ -334,10 +334,33 @@ async def score_pending_articles(
         for row in rows:
             article = dict(row)
 
+            # ── Body text extraction ─────────────────────────────────────────
+            # Use cached body_text if already in DB; otherwise fetch now.
+            # Must run BEFORE SitRep dedup so Gemini sees actual article content
+            # rather than just the title when deciding if the article is new.
+            body_text: Optional[str] = article.get("body_text")
+            if not body_text:
+                extract_attempted += 1
+                body_text = await asyncio.to_thread(fetch_article_text, article["url"])
+                if body_text:
+                    extract_succeeded += 1
+                    with transaction(conn):
+                        update_article_body(conn, article["id"], body_text)
+                    logger.debug(
+                        "Extracted %d chars from %s", len(body_text), article.get("source_name", "")
+                    )
+                else:
+                    logger.debug("No body text for %s — title-only scoring", article.get("url", "")[:80])
+                # Brief pause between HTTP fetches to be polite to news sites
+                await asyncio.sleep(1.5)
+
+            # Populate body_text in the article dict so run_sitrep_dedup can
+            # forward it to _call_gemini_dedup.
+            article["body_text"] = body_text
+
             # ── SitRep dedup (Layer 1) ────────────────────────────────────────
-            # Check against the living situation report BEFORE body extraction
-            # or Gemini scoring.  Uses cached body_text if available; falls back
-            # to title-only.  Fail-open: if sitrep errors, article proceeds.
+            # Compare against the living situation report now that body_text is
+            # populated.  Fail-open: if sitrep errors, article proceeds.
             if sitrep_enabled:
                 is_new = await run_sitrep_dedup(
                     db_path, client, article,
@@ -355,24 +378,6 @@ async def score_pending_articles(
                     await asyncio.sleep(1)  # brief pause between Gemini calls
                     continue
                 sitrep_new += 1
-
-            # ── Body text extraction ─────────────────────────────────────────
-            # Use cached body_text if already in DB; otherwise fetch now.
-            body_text: Optional[str] = article.get("body_text")
-            if not body_text:
-                extract_attempted += 1
-                body_text = await asyncio.to_thread(fetch_article_text, article["url"])
-                if body_text:
-                    extract_succeeded += 1
-                    with transaction(conn):
-                        update_article_body(conn, article["id"], body_text)
-                    logger.debug(
-                        "Extracted %d chars from %s", len(body_text), article.get("source_name", "")
-                    )
-                else:
-                    logger.debug("No body text for %s — title-only scoring", article.get("url", "")[:80])
-                # Brief pause between HTTP fetches to be polite to news sites
-                await asyncio.sleep(1.5)
 
             # ── Gemini scoring (narrative-key dedup is Layer 2) ──────────────
             # Refresh narrative context before each article so Gemini sees
