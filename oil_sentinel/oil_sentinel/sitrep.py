@@ -229,10 +229,14 @@ async def _call_gemini_dedup(
     title = article.get("title") or "(no title)"
     source = article.get("source_name") or "unknown"
     body = article.get("body_text") or ""
-    body_truncated = body[:2000] if body else title
+    body_truncated = body[:600] if body else title
+
+    # Cap sitrep at 3000 chars — the model needs current state, not full history.
+    # Compacted sitreps put the most recent entries first so truncation is safe.
+    report_truncated = sitrep_content[:3000]
 
     prompt = _DEDUP_TEMPLATE.format(
-        report=sitrep_content,
+        report=report_truncated,
         title=title,
         source=source,
         body=body_truncated,
@@ -353,7 +357,7 @@ async def run_sitrep_dedup(
     client: genai.Client,
     article: dict,
     dedup_model: str = "gemini-2.5-flash",
-    compact_model: str = "gemini-2.5-flash",
+    compact_model: str = "gemini-2.5-flash-lite",
 ) -> bool:
     """
     Run the situation-report dedup check for a single article.

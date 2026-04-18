@@ -1554,7 +1554,7 @@ async def _cmd_compact(
 
     client = make_gemini_client(cfg.gemini.api_key)
     result = await compact_sitrep_to_target(
-        db_path, client, cfg.gemini.scoring_model, target_chars=target
+        db_path, client, cfg.gemini.dedup_model, target_chars=target
     )
 
     if result is None:

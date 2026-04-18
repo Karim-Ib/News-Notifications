@@ -308,8 +308,8 @@ def _latest_brent_price_sync(db_path: str) -> Optional[float]:
 
 
 async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State) -> None:
-    """Score pending articles, evaluate narrative trend, and dispatch alerts every 2 minutes."""
-    interval = 120
+    """Score pending articles, evaluate narrative trend, and dispatch alerts every 5 minutes."""
+    interval = 300
     logger = logging.getLogger("scoring_loop")
 
     if not cfg.gemini.api_key or cfg.gemini.api_key == "YOUR_GEMINI_API_KEY_HERE":
