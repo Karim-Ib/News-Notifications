@@ -70,6 +70,26 @@ _STATE_DISPLAY_LABELS: dict[str, str] = {
 }
 _STATE_BG_ALPHA = 0.18
 
+# Momentum panel colours
+_MOM_POS   = "#ef5350"   # positive score fill  (bullish pressure)
+_MOM_NEG   = "#66bb6a"   # negative score fill  (de-escalation pressure)
+_MOM_LINE  = "#ccccee"   # score line
+_MOM_ZERO  = "#555577"   # zero baseline
+
+# Score threshold lines (value → colour)
+_THRESHOLDS: dict[float, str] = {
+     3.0: "#c62828",   # strong escalation
+     1.0: "#ffa726",   # escalation
+    -1.0: "#43a047",   # de-escalation
+    -3.0: "#1b5e20",   # strong de-escalation
+}
+_THRESHOLD_LABELS: dict[float, str] = {
+     3.0: "Strong esc.",
+     1.0: "Esc.",
+    -1.0: "De-esc.",
+    -3.0: "Strong de-esc.",
+}
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -331,5 +351,171 @@ def generate_price_narrative_chart(
     # ── Legend (narrative states present in window) ───────────────────────────
     # lower-left keeps it away from the price label at upper-right.
     _apply_legend(ax, legend_patches, loc="lower left")
+
+    return _fig_to_bytes(fig)
+
+
+def generate_price_momentum_chart(
+    prices: list[tuple[datetime, float]],
+    narratives: list[tuple[datetime, float, str]],
+    alert_markers: Optional[list[tuple[datetime, str]]] = None,
+    title: str = "Price vs Momentum",
+) -> Optional[bytes]:
+    """
+    Two-panel chart: WTI price (top) + weighted sentiment score over time (bottom).
+
+    The score panel shows momentum directly:
+      - Rising score  → bullish pressure building (red fill)
+      - Falling score → de-escalation / bearish pressure (green fill)
+      - Horizontal dashed lines at ±1.0 and ±3.0 mark state transition thresholds
+      - A current-momentum label (↑ Strengthening / ↓ Weakening / → Stable)
+        is derived from the slope of the most recent score values
+
+    Returns None if fewer than 3 price samples or fewer than 2 score samples exist.
+    """
+    if len(prices) < 3:
+        logger.debug("generate_price_momentum_chart: only %d price samples — skipping", len(prices))
+        return None
+
+    # Need at least 2 narrative points to draw a meaningful score line
+    score_data = [(ts, score) for ts, score, _state in narratives if score is not None]
+    if len(score_data) < 2:
+        logger.debug("generate_price_momentum_chart: only %d score samples — skipping", len(score_data))
+        return None
+
+    times  = [p[0] for p in prices]
+    values = [p[1] for p in prices]
+    t_start, t_end = times[0], times[-1]
+    span = t_end - t_start
+    y_lo, y_hi = _y_limits(values)
+
+    score_times = [s[0] for s in score_data]
+    score_vals  = [s[1] for s in score_data]
+
+    # ── Figure: 2 rows sharing x-axis ────────────────────────────────────────
+    fig, (ax_price, ax_mom) = plt.subplots(
+        2, 1,
+        figsize=(_WIDTH, _HEIGHT + 2),   # taller to fit both panels
+        dpi=_DPI,
+        sharex=True,
+        gridspec_kw={"height_ratios": [3, 2], "hspace": 0.06},
+        constrained_layout=False,
+    )
+    fig.patch.set_facecolor(_BG_OUTER)
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.93, bottom=0.10)
+
+    # ── TOP PANEL: price ─────────────────────────────────────────────────────
+    ax_price.set_facecolor(_BG_INNER)
+    ax_price.plot(times, values, color=_LINE, linewidth=1.8, zorder=3,
+                  solid_capstyle="round")
+    ax_price.fill_between(times, values, y_lo, alpha=0.12, color=_LINE, zorder=2)
+
+    # Alert markers on price panel
+    if alert_markers:
+        xaxis_trans = ax_price.get_xaxis_transform()
+        for ts, direction in alert_markers:
+            color, sym = _MARKER.get(direction, _MARKER["neutral"])
+            ax_price.axvline(ts, color=color, linewidth=1.2, linestyle="--",
+                             alpha=0.75, zorder=4)
+            ax_price.text(ts, 0.96, sym,
+                          transform=xaxis_trans,
+                          ha="center", va="top", fontsize=10, color=color,
+                          zorder=5, clip_on=False)
+
+    # Current price label
+    current = values[-1]
+    pct     = (current - values[0]) / values[0] * 100
+    price_color = "#66bb6a" if pct >= 0 else "#ef5350"
+    ax_price.text(0.99, 0.97, f"${current:.2f}  {pct:+.2f}%",
+                  transform=ax_price.transAxes,
+                  ha="right", va="top", fontsize=9,
+                  color=price_color, fontweight="bold", zorder=6)
+
+    ax_price.set_xlim(t_start, t_end + span * 0.01)
+    ax_price.set_ylim(y_lo, y_hi)
+    ax_price.yaxis.set_major_formatter(mticker.FormatStrFormatter("$%.2f"))
+    _style_axes(ax_price)
+    ax_price.set_title(title, color=_TITLE, fontsize=10, pad=6, loc="left")
+
+    # Alert marker legend
+    if alert_markers:
+        seen: set[str] = set()
+        handles = []
+        for _, direction in alert_markers:
+            if direction not in seen:
+                color, sym = _MARKER.get(direction, _MARKER["neutral"])
+                handles.append(Line2D([0], [0], color=color, linewidth=1.2,
+                                      linestyle="--",
+                                      label=f"{sym} {direction.title()}"))
+                seen.add(direction)
+        _apply_legend(ax_price, handles)
+
+    # ── BOTTOM PANEL: weighted score / momentum ───────────────────────────────
+    ax_mom.set_facecolor(_BG_INNER)
+
+    zeros = [0.0] * len(score_vals)
+
+    # Positive fill (bullish pressure)
+    ax_mom.fill_between(score_times, score_vals, zeros,
+                        where=[v > 0 for v in score_vals],
+                        alpha=0.30, color=_MOM_POS, zorder=2,
+                        interpolate=True)
+    # Negative fill (de-escalation / bearish pressure)
+    ax_mom.fill_between(score_times, score_vals, zeros,
+                        where=[v <= 0 for v in score_vals],
+                        alpha=0.30, color=_MOM_NEG, zorder=2,
+                        interpolate=True)
+
+    # Score line (on top of fills)
+    ax_mom.plot(score_times, score_vals, color=_MOM_LINE, linewidth=1.4,
+                zorder=3, solid_capstyle="round")
+
+    # Zero baseline
+    ax_mom.axhline(0, color=_MOM_ZERO, linewidth=0.8, zorder=2)
+
+    # Threshold lines — only draw ones within the visible score range
+    score_min = min(score_vals)
+    score_max = max(score_vals)
+    y_pad = max(abs(score_max), abs(score_min), 1.5) * 0.15
+    vis_lo = score_min - y_pad
+    vis_hi = score_max + y_pad
+
+    for level, color in _THRESHOLDS.items():
+        if vis_lo <= level <= vis_hi:
+            ax_mom.axhline(level, color=color, linewidth=0.8,
+                           linestyle="--", alpha=0.7, zorder=2)
+            ax_mom.text(t_start + span * 0.005, level,
+                        _THRESHOLD_LABELS[level],
+                        color=color, fontsize=6, va="bottom", alpha=0.85)
+
+    # ── Momentum direction label (derived from recent score slope) ───────────
+    # Use the last min(8, N) score values to compute slope.
+    n_recent = min(8, len(score_vals))
+    recent   = score_vals[-n_recent:]
+    slope    = (recent[-1] - recent[0]) / max(n_recent - 1, 1)
+    if slope > 0.05:
+        mom_label, mom_color = "↑ Strengthening", _MOM_POS
+    elif slope < -0.05:
+        mom_label, mom_color = "↓ Weakening", _MOM_NEG
+    else:
+        mom_label, mom_color = "→ Stable", _TICK
+
+    ax_mom.text(0.99, 0.95, mom_label,
+                transform=ax_mom.transAxes,
+                ha="right", va="top", fontsize=8,
+                color=mom_color, fontweight="bold", zorder=5)
+
+    # Current score value
+    ax_mom.text(0.99, 0.05, f"score {score_vals[-1]:+.2f}",
+                transform=ax_mom.transAxes,
+                ha="right", va="bottom", fontsize=7,
+                color=_TICK, zorder=5)
+
+    ax_mom.set_ylim(vis_lo, vis_hi)
+    ax_mom.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.1f"))
+    ax_mom.set_ylabel("sentiment score", color=_TICK, fontsize=7, labelpad=3)
+    _style_axes(ax_mom)
+    _apply_date_fmt(ax_mom, times)
+    fig.autofmt_xdate(rotation=30, ha="right")
 
     return _fig_to_bytes(fig)

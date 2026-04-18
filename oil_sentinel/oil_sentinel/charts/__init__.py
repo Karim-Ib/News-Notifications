@@ -1,3 +1,7 @@
-from oil_sentinel.charts.price_chart import generate_price_chart, generate_price_narrative_chart
+from oil_sentinel.charts.price_chart import (
+    generate_price_chart,
+    generate_price_momentum_chart,
+    generate_price_narrative_chart,
+)
 
-__all__ = ["generate_price_chart", "generate_price_narrative_chart"]
+__all__ = ["generate_price_chart", "generate_price_momentum_chart", "generate_price_narrative_chart"]

@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover — only on very old Python builds
 
 import aiohttp
 
-from oil_sentinel.charts import generate_price_chart, generate_price_narrative_chart
+from oil_sentinel.charts import generate_price_chart, generate_price_momentum_chart
 from oil_sentinel.db import (
     deactivate_all_watches,
     deactivate_watch,
@@ -271,15 +271,15 @@ async def _cmd_chart(
         await send_message(session, bot_token, chat_id, "⚠️ Price chart generation failed.")
 
     if days > 1:
-        narrative_bytes = generate_price_narrative_chart(
+        momentum_bytes = generate_price_momentum_chart(
             prices, narratives,
             alert_markers=markers or None,
-            title=f"Price vs Narrative  ·  {days_str}",
+            title=f"Price vs Momentum  ·  {days_str}",
         )
-        if narrative_bytes:
+        if momentum_bytes:
             await send_photo(
-                session, bot_token, chat_id, narrative_bytes,
-                caption=f"📊 Price vs narrative  •  {days_str}",
+                session, bot_token, chat_id, momentum_bytes,
+                caption=f"📊 Price vs momentum  •  {days_str}",
             )
         else:
             await send_message(session, bot_token, chat_id,
