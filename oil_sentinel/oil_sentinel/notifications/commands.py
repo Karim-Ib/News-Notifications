@@ -54,7 +54,7 @@ from oil_sentinel.narrative import STATE_EMOJI, STATE_LABELS
 from oil_sentinel.notifications.telegram import TICKER_LABELS, send_message, send_photo
 from oil_sentinel.accuracy import format_accuracy_report
 from oil_sentinel.scoring.gemini import make_gemini_client
-from oil_sentinel.sitrep import compact_sitrep_to_target
+from oil_sentinel.sitrep import COMPACTION_TARGET, compact_sitrep_to_target, reset_sitrep
 from oil_sentinel.portfolio import (
     PRODUCT_NAMES,
     PRODUCT_TICKERS,
@@ -95,6 +95,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("idle",       "Show or change idle mode and timezone"),
     ("sitrep",     "Show the current situation report"),
     ("compact",    "Force SitRep compaction to half current size"),
+    ("reset_sitrep", "Hard-reset SitRep to 3000 chars (no Gemini call)"),
     ("accuracy",   "Prediction accuracy stats  /accuracy [7d|30d|all]"),
     ("help",       "List all available commands"),
 ]
@@ -1540,7 +1541,7 @@ async def _cmd_compact(
         return
 
     current_len = len(sitrep_row["content"])
-    target = current_len // 2
+    target = min(current_len // 2, COMPACTION_TARGET)
 
     await send_message(
         session, bot_token, chat_id,
@@ -1571,6 +1572,31 @@ async def _cmd_compact(
         f"(v{old_version} → v{new_version})",
     )
     logger.info("Manual SitRep compaction: %d→%d chars v%s→v%s",
+                old_len, new_len, old_version, new_version)
+
+
+async def _cmd_reset_sitrep(
+    db_path: str,
+    session: aiohttp.ClientSession,
+    bot_token: str,
+    chat_id: str,
+) -> None:
+    """/reset_sitrep — deterministically truncate SitRep to COMPACTION_TARGET chars."""
+    result = reset_sitrep(db_path)
+
+    if result is None:
+        await send_message(
+            session, bot_token, chat_id,
+            f"ℹ️ SitRep is already within {COMPACTION_TARGET} chars — no reset needed.",
+        )
+        return
+
+    old_len, new_len, old_version, new_version = result
+    await send_message(
+        session, bot_token, chat_id,
+        f"✅ SitRep reset: {old_len} → {new_len} chars (v{old_version} → v{new_version})",
+    )
+    logger.info("SitRep reset via /reset_sitrep: %d→%d chars v%s→v%s",
                 old_len, new_len, old_version, new_version)
 
 
@@ -1669,6 +1695,8 @@ async def handle_update(
         await _cmd_sitrep(db_path, session, bot_token, allowed_chat_id)
     elif command == "/compact":
         await _cmd_compact(db_path, session, bot_token, allowed_chat_id, cfg)
+    elif command == "/reset_sitrep":
+        await _cmd_reset_sitrep(db_path, session, bot_token, allowed_chat_id)
     elif command == "/help":
         await send_message(session, bot_token, allowed_chat_id, _HELP_TEXT)
     elif command == "/shutdown_bot":

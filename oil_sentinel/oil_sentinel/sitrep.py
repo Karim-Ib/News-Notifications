@@ -25,8 +25,8 @@ Report structure
 
 Compaction
 ----------
-  When len(content) > COMPACTION_THRESHOLD (12 000 chars), a Gemini call
-  compacts the report to ~COMPACTION_TARGET (6 000 chars), preserving
+  When len(content) > COMPACTION_THRESHOLD (8 000 chars), a Gemini call
+  compacts the report to ~COMPACTION_TARGET (3 000 chars), preserving
   structure, timestamps, and key facts.
 """
 
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 COMPACTION_THRESHOLD = 8_000   # characters — trigger compaction above this
-COMPACTION_TARGET    = 6_000   # characters — aim for this after compaction
+COMPACTION_TARGET    = 3_000   # characters — aim for this after compaction
 
 SECTION_HEADERS: dict[str, str] = {
     "military":   "MILITARY:",
@@ -75,6 +75,9 @@ SEED_TEMPLATE = (
 # ---------------------------------------------------------------------------
 
 _stats: dict = {"new": 0, "dup": 0, "window_start": datetime.now(timezone.utc)}
+
+_last_compaction_attempt: Optional[datetime] = None
+_COMPACTION_COOLDOWN = 1800  # seconds — 30 min between automatic compaction attempts
 
 
 def get_stats_snapshot() -> dict:
@@ -305,6 +308,65 @@ Current report:
 """
 
 
+def _section_aware_truncate(content: str, max_chars: int) -> str:
+    """
+    Truncate content to max_chars while preserving all 6 section headers
+    and the most recent entries in each (entries are appended at the bottom).
+    Returns content unchanged if already within max_chars.
+    """
+    if len(content) <= max_chars:
+        return content
+
+    # Separate the report header from the sectioned body
+    header_end = content.find('\n\n')
+    if header_end < 0:
+        return content[:max_chars]
+    header = content[:header_end + 2]
+    body = content[header_end + 2:]
+
+    # Locate each known section in the body, in document order
+    section_positions: list[tuple[int, str]] = []
+    for h in SECTION_HEADERS.values():
+        pos = body.find(h)
+        if pos >= 0:
+            section_positions.append((pos, h))
+    section_positions.sort(key=lambda x: x[0])
+
+    if not section_positions:
+        return content[:max_chars]
+
+    # Extract per-section content slices
+    parsed: list[tuple[str, str]] = []
+    for i, (pos, h) in enumerate(section_positions):
+        start = pos + len(h)
+        end = section_positions[i + 1][0] if i + 1 < len(section_positions) else len(body)
+        parsed.append((h, body[start:end]))
+
+    # Distribute available budget evenly; most-recent (bottom) entries kept per section
+    per_budget = max(0, (max_chars - len(header)) // len(parsed))
+
+    parts = [header]
+    for h, sec_content in parsed:
+        content_budget = per_budget - len(h)
+        if content_budget <= 0:
+            parts.append(h + "\n")
+        elif len(sec_content) <= content_budget:
+            parts.append(h + sec_content)
+        else:
+            tail = sec_content[-content_budget:]
+            nl = tail.find('\n')
+            if 0 < nl < len(tail) - 1:
+                tail = tail[nl:]
+            parts.append(h + tail)
+
+    result = "".join(parts)
+    logger.warning(
+        "SitRep section-aware truncation: %d → %d chars",
+        len(content), len(result),
+    )
+    return result
+
+
 async def _call_gemini_compact(
     client: genai.Client,
     content: str,
@@ -312,9 +374,14 @@ async def _call_gemini_compact(
     target_chars: int = COMPACTION_TARGET,
 ) -> Optional[str]:
     """Ask Gemini to compact the report. Returns compacted text or None."""
+    # Section-aware truncation caps the model input to a manageable size.
+    # A runaway 90k-char sitrep becomes ~16k chars here, keeping the newest
+    # entries from every section instead of a blind tail slice.
+    content = _section_aware_truncate(content, max_chars=16_000)
+
     config = types.GenerateContentConfig(
         temperature=0.2,
-        max_output_tokens=4096,
+        max_output_tokens=2048,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     for attempt in range(3):
@@ -372,7 +439,7 @@ async def run_sitrep_dedup(
     On any Gemini error the function returns True (fail-open) to avoid
     silently suppressing articles.
     """
-    global _stats
+    global _stats, _last_compaction_attempt
 
     conn = get_connection(db_path)
     try:
@@ -406,29 +473,54 @@ async def run_sitrep_dedup(
                 # outside the transaction)
                 fresh2 = get_current_sitrep(conn)
                 if fresh2 and len(fresh2["content"]) > COMPACTION_THRESHOLD:
-                    old_version = fresh2["version"]
-                    old_chars = len(fresh2["content"])
-                    compact_content = await _call_gemini_compact(
-                        client, fresh2["content"], compact_model
-                    )
-                    if compact_content:
-                        with transaction(conn):
-                            # Re-read inside transaction in case another append raced
-                            latest = get_current_sitrep(conn)
-                            if latest:
-                                insert_sitrep_row(
-                                    conn,
-                                    content=compact_content,
-                                    previous_id=latest["id"],
-                                    compacted_from=old_version,
-                                )
-                        new_version_row = get_current_sitrep(conn)
-                        new_version = new_version_row["version"] if new_version_row else "?"
-                        logger.info(
-                            "SitRep compaction [%s]: v%s→v%s (%d→%d chars)",
-                            _model_label(compact_model),
-                            old_version, new_version, old_chars, len(compact_content),
+                    now = datetime.now(timezone.utc)
+                    if (
+                        _last_compaction_attempt is not None
+                        and (now - _last_compaction_attempt).total_seconds() < _COMPACTION_COOLDOWN
+                    ):
+                        pass  # cooldown active — skip until next window
+                    else:
+                        _last_compaction_attempt = now
+                        old_version = fresh2["version"]
+                        old_chars = len(fresh2["content"])
+                        compact_content = await _call_gemini_compact(
+                            client, fresh2["content"], compact_model
                         )
+                        if compact_content:
+                            with transaction(conn):
+                                # Re-read inside transaction in case another append raced
+                                latest = get_current_sitrep(conn)
+                                if latest:
+                                    insert_sitrep_row(
+                                        conn,
+                                        content=compact_content,
+                                        previous_id=latest["id"],
+                                        compacted_from=old_version,
+                                    )
+                            new_version_row = get_current_sitrep(conn)
+                            new_version = new_version_row["version"] if new_version_row else "?"
+                            logger.info(
+                                "SitRep compaction [%s]: v%s→v%s (%d→%d chars)",
+                                _model_label(compact_model),
+                                old_version, new_version, old_chars, len(compact_content),
+                            )
+                        else:
+                            # Gemini compaction failed — fall back to deterministic
+                            # section-aware truncation so the sitrep never grows unboundedly.
+                            fallback = _section_aware_truncate(fresh2["content"], COMPACTION_TARGET)
+                            with transaction(conn):
+                                latest = get_current_sitrep(conn)
+                                if latest:
+                                    insert_sitrep_row(
+                                        conn,
+                                        content=fallback,
+                                        previous_id=latest["id"],
+                                        compacted_from=old_version,
+                                    )
+                            logger.warning(
+                                "SitRep hard-truncated (compaction failed): %d → %d chars",
+                                old_chars, len(fallback),
+                            )
             return True
 
         else:
@@ -489,6 +581,51 @@ async def compact_sitrep_to_target(
         logger.info(
             "SitRep manual compaction [%s]: v%s→v%s (%d→%d chars)",
             _model_label(model), old_version, new_version, old_len, new_len,
+        )
+        return (old_len, new_len, old_version, new_version)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Public: deterministic reset (/reset_sitrep command)
+# ---------------------------------------------------------------------------
+
+def reset_sitrep(db_path: str) -> Optional[tuple[int, int, int, int]]:
+    """
+    Deterministically truncate the live sitrep to COMPACTION_TARGET chars
+    using section-aware truncation.  No Gemini call — safe to run at any time.
+
+    Returns (old_len, new_len, old_version, new_version) on success,
+    or None if the sitrep is already within COMPACTION_TARGET or not found.
+    """
+    conn = get_connection(db_path)
+    try:
+        current = get_current_sitrep(conn)
+        if current is None:
+            return None
+
+        old_len = len(current["content"])
+        old_version = current["version"]
+
+        new_content = _section_aware_truncate(current["content"], COMPACTION_TARGET)
+        if new_content == current["content"]:
+            return None  # already small enough
+
+        with transaction(conn):
+            insert_sitrep_row(
+                conn,
+                content=new_content,
+                previous_id=current["id"],
+                compacted_from=old_version,
+            )
+
+        new_row = get_current_sitrep(conn)
+        new_version = new_row["version"] if new_row else old_version + 1
+        new_len = len(new_content)
+        logger.info(
+            "SitRep deterministic reset: v%s→v%s (%d→%d chars)",
+            old_version, new_version, old_len, new_len,
         )
         return (old_len, new_len, old_version, new_version)
     finally:
