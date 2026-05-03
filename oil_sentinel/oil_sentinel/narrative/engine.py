@@ -35,6 +35,7 @@ from oil_sentinel.db import (
     get_connection,
     get_latest_narrative_state,
     insert_narrative_state,
+    prune_old_narrative_states,
     transaction,
 )
 
@@ -241,6 +242,9 @@ def evaluate_narrative(db_path: str, tier1_domains: set) -> dict:
                 avg_bear_mag=avg_bear_mag,
                 key_driver_ids=driver_ids,
             )
+            pruned = prune_old_narrative_states(conn, keep_days=30)
+            if pruned:
+                logger.debug("Narrative: pruned %d state rows older than 30 days", pruned)
 
         logger.info(
             "Narrative: %s (score=%.2f, momentum=%s, transition=%s, prev=%s)",

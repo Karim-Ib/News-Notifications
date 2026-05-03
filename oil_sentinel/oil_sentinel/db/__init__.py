@@ -1,33 +1,42 @@
-"""Database subpackage — re-exports the public API from models."""
+"""Database subpackage — re-exports the public API from the db sub-modules."""
 
-from oil_sentinel.db.models import (
+from oil_sentinel.db.connection import (
     get_connection,
     transaction,
     init_db,
-    get_current_sitrep,
-    insert_sitrep_row,
+)
+from oil_sentinel.db.articles import (
     url_hash,
     title_hash_exists,
     article_exists,
     insert_article,
+    update_article_body,
     get_unscored_articles,
     mark_article_scored,
+)
+from oil_sentinel.db.market import (
     insert_market_sample,
     get_recent_prices,
     get_price_history,
     latest_market_sample,
+)
+from oil_sentinel.db.alerts import (
     insert_alert,
     mark_alert_sent,
+    get_recent_narrative_keys,
+    narrative_exists_recent,
     last_sent_for_narrative,
     get_recently_sent_alerts,
     get_unsent_alerts,
-    get_recent_narrative_keys,
-    narrative_exists_recent,
+)
+from oil_sentinel.db.narrative import (
     insert_narrative_state,
     get_narrative_history,
     get_latest_narrative_state,
     mark_narrative_transition_alerted,
-    update_article_body,
+    prune_old_narrative_states,
+)
+from oil_sentinel.db.watches import (
     insert_watch,
     get_active_watches,
     get_active_watches_for_ticker,
@@ -36,6 +45,8 @@ from oil_sentinel.db.models import (
     deactivate_watch,
     deactivate_all_watches,
     update_watch_price,
+)
+from oil_sentinel.db.portfolio import (
     insert_portfolio,
     get_portfolio_by_name,
     get_portfolio_by_id,
@@ -46,6 +57,12 @@ from oil_sentinel.db.models import (
     insert_portfolio_snapshot,
     get_portfolio_snapshots,
     get_last_portfolio_snapshot,
+)
+from oil_sentinel.db.situation_reports import (
+    get_current_sitrep,
+    insert_sitrep_row,
+)
+from oil_sentinel.db.accuracy import (
     insert_daily_score,
     daily_score_exists,
     get_daily_scores,
@@ -55,12 +72,11 @@ __all__ = [
     "get_connection",
     "transaction",
     "init_db",
-    "get_current_sitrep",
-    "insert_sitrep_row",
     "url_hash",
     "title_hash_exists",
     "article_exists",
     "insert_article",
+    "update_article_body",
     "get_unscored_articles",
     "mark_article_scored",
     "insert_market_sample",
@@ -69,16 +85,16 @@ __all__ = [
     "latest_market_sample",
     "insert_alert",
     "mark_alert_sent",
+    "get_recent_narrative_keys",
+    "narrative_exists_recent",
     "last_sent_for_narrative",
     "get_recently_sent_alerts",
     "get_unsent_alerts",
-    "get_recent_narrative_keys",
-    "narrative_exists_recent",
     "insert_narrative_state",
     "get_narrative_history",
     "get_latest_narrative_state",
     "mark_narrative_transition_alerted",
-    "update_article_body",
+    "prune_old_narrative_states",
     "insert_watch",
     "get_active_watches",
     "get_active_watches_for_ticker",
@@ -97,6 +113,8 @@ __all__ = [
     "insert_portfolio_snapshot",
     "get_portfolio_snapshots",
     "get_last_portfolio_snapshot",
+    "get_current_sitrep",
+    "insert_sitrep_row",
     "insert_daily_score",
     "daily_score_exists",
     "get_daily_scores",

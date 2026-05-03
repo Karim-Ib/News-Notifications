@@ -23,7 +23,7 @@ from oil_sentinel.db import (
     title_hash_exists,
     transaction,
 )
-from oil_sentinel.ingestion.gdelt import _ACTOR_RE, _KEYWORD_RE, _title_hash
+from oil_sentinel.ingestion.filters import _ACTOR_RE, _KEYWORD_RE, _title_hash
 
 logger = logging.getLogger(__name__)
 
