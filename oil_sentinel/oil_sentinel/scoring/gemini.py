@@ -74,23 +74,14 @@ OUTPUT a JSON object with EXACTLY these fields:
 
                   EXAMPLES (source baseline × certainty = final):
                     Reuters confirmed strike, named officials  → 0.90 × 1.0 = 0.90
-                    Bloomberg "sources say" ceasefire talks    → 0.90 × 0.7 = 0.63
-                    oilprice.com confirmed OPEC cut            → 0.50 × 1.0 = 0.50
                     regional site, "may close" Hormuz          → 0.50 × 0.7 = 0.35
-                    unknown blog speculating about supply       → 0.30 × 0.5 = 0.15
 
                   NEVER output 0.70 as a default. Every article needs a reasoned value.
   event_type    : one label from the taxonomy below
   narrative_key : lowercase snake_case slug <=30 chars.
                   Use SPECIFIC event details — never generic conflict labels.
-                    GOOD: "saudi_180_oil_price_warning"
-                          "houthi_bab_el_mandeb_threat"
-                          "iran_hormuz_closure_drill"
-                          "opec_march_output_cut"
-                    BAD:  "iran_conflict_escalation"
-                          "middle_east_oil_tension"
-                          "iran_israel_conflict"
-                          "oil_market_disruption"
+                    GOOD: "saudi_180_oil_price_warning", "iran_hormuz_closure_drill"
+                    BAD:  "iran_conflict_escalation", "oil_market_disruption"
                   For follow-up articles on the SAME specific event reuse the
                   EXACT key. Different events with the same actors get different keys.
   summary       : <=120 chars, present-tense factual headline
@@ -171,12 +162,12 @@ def _build_prompt(
     except (TypeError, ValueError):
         tone_str = "n/a"
     if recent_narratives:
-        narrative_context = "  " + "\n  ".join(recent_narratives)
+        narrative_context = "  " + "\n  ".join(recent_narratives[:15])
     else:
         narrative_context = "  (none yet)"
 
     if body_text and body_text.strip():
-        body_section = f"\nArticle text (first 2000 chars):\n{body_text}\n\n"
+        body_section = f"\nArticle text (first 1000 chars):\n{body_text[:1000]}\n\n"
     else:
         body_section = "\n"
 

@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 COMPACTION_THRESHOLD = 8_000   # characters — trigger compaction above this
-COMPACTION_TARGET    = 4_000   # characters — aim for this after compaction
+COMPACTION_TARGET    = 6_000   # characters — aim for this after compaction
 
 SECTION_HEADERS: dict[str, str] = {
     "military":   "MILITARY:",
@@ -208,14 +208,18 @@ Respond with ONLY a JSON object:
 }}
 
 Rules:
-- An article is NEW only if it contains specific facts, events, or \
-developments NOT already covered in the situation report
+- Mark as DUPLICATE only if the situation report already contains the \
+SAME specific claim, figure, or event — not just the same general topic
+- A new named-source quote IS new, even if the topic is covered
+- A new specific number or figure IS new (updated barrel count, price, \
+casualty figure, timeline)
+- A new named actor taking action IS new, even on a known story thread
 - Evolution of a known story IS new: threat→action, proposal→agreement, \
-unconfirmed→confirmed
-- Same event from a different source is NOT new
-- New details/numbers about a known event ARE new (e.g., casualty count \
-updated, specific dollar amount added)
-- Opinion/analysis about known events is NOT new\
+unconfirmed→confirmed, warning→enforcement
+- Same event re-reported verbatim by a different source is NOT new
+- Pure opinion or analysis with no new facts is NOT new
+- When uncertain, default to NEW — missing a genuine signal is worse \
+than scoring a near-duplicate\
 """
 
 
@@ -231,9 +235,9 @@ async def _call_gemini_dedup(
     body = article.get("body_text") or ""
     body_truncated = body[:600] if body else title
 
-    # Cap sitrep at 3000 chars — the model needs current state, not full history.
-    # Compacted sitreps put the most recent entries first so truncation is safe.
-    report_truncated = sitrep_content[:3000]
+    # Cap sitrep at 5000 chars — matches the compaction target so dedup sees
+    # the full compacted report rather than a truncated half of it.
+    report_truncated = sitrep_content[:5000]
 
     prompt = _DEDUP_TEMPLATE.format(
         report=report_truncated,
