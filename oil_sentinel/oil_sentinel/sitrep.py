@@ -185,14 +185,29 @@ def _do_append_to_sitrep(conn, current_row, section: str, new_info: str) -> str:
 # Gemini: dedup check
 # ---------------------------------------------------------------------------
 
-_DEDUP_SYSTEM = (
-    "You are a news deduplication filter for an oil market intelligence system. "
-    "Respond ONLY with a valid JSON object — no markdown, no explanation."
-)
+_DEDUP_SYSTEM = """\
+You are a news deduplication filter for an oil market intelligence system. \
+Respond ONLY with a valid JSON object — no markdown, no explanation.
+
+Output schema:
+{
+  "is_new": true/false,
+  "new_information": "one factual sentence, present tense, max 150 characters" or null,
+  "section": "military|hormuz|diplomatic|supply|market|regional" or null,
+  "reasoning": "one sentence why this is/isn't new"
+}
+
+Section values:
+  military    — military operations, strikes, armed conflict
+  hormuz      — Strait of Hormuz navigation, blockade threats, transit disruptions
+  diplomatic  — negotiations, agreements, sanctions, official statements
+  supply      — production levels, pipelines, exports, cargo routing
+  market      — price movements, trader reactions, demand forecasts
+  regional    — country-level or regional political/economic impacts\
+"""
 
 _DEDUP_TEMPLATE = """\
-You are a news deduplication filter. Compare this article against \
-the current situation report below.
+Compare this article against the current situation report below.
 
 SITUATION REPORT:
 {report}
@@ -200,29 +215,32 @@ SITUATION REPORT:
 NEW ARTICLE:
 Title: {title}
 Source: {source}
-Body: {body}
+Body (first 600 chars): {body}
 
-Respond with ONLY a JSON object:
-{{
-  "is_new": true/false,
-  "new_information": "specific new fact not in the report" or null,
-  "section": "military|hormuz|diplomatic|supply|market|regional" or null,
-  "reasoning": "one sentence why this is/isn't new"
-}}
-
-Rules:
-- Mark as DUPLICATE only if the situation report already contains the \
-SAME specific claim, figure, or event — not just the same general topic
-- A new named-source quote IS new, even if the topic is covered
-- A new specific number or figure IS new (updated barrel count, price, \
-casualty figure, timeline)
-- A new named actor taking action IS new, even on a known story thread
-- Evolution of a known story IS new: threat→action, proposal→agreement, \
+TREAT AS NEW if any of the following apply:
+- A new named-source quote, even if the general topic is already covered
+- A new specific number or figure (updated barrel count, price, casualty count, timeline)
+- A new named actor taking action, even on a known story thread
+- Evolution of a known story: threat→action, proposal→agreement, \
 unconfirmed→confirmed, warning→enforcement
-- Same event re-reported verbatim by a different source is NOT new
-- Pure opinion or analysis with no new facts is NOT new
-- When uncertain, default to NEW — missing a genuine signal is worse \
-than scoring a near-duplicate\
+
+TREAT AS DUPLICATE if any of the following apply:
+- The situation report already contains the SAME specific claim, figure, or event \
+(not just the same general topic)
+- The same event re-reported verbatim by a different source
+- Pure opinion or analysis with no new facts
+
+When uncertain, default to NEW — missing a genuine signal is worse \
+than scoring a near-duplicate.
+
+EXAMPLES:
+NEW — Sitrep records "Iran warned of Hormuz closure." Article reports Iran has begun \
+deploying naval vessels to the strait. This is threat→action evolution. \
+→ new_information: "Iran deploying naval vessels to Hormuz, escalating from verbal threat to action."
+
+DUPLICATE — Sitrep already records "Saudi Arabia warned oil could hit $180." \
+Article is a second outlet repeating the same Saudi minister quote with no new \
+figures or statements. → is_new: false.\
 """
 
 
@@ -287,11 +305,11 @@ async def _call_gemini_dedup(
 # ---------------------------------------------------------------------------
 
 _COMPACT_PROMPT = """\
-Compact this situation report to approximately {target} characters.
+Compact this situation report to strictly under {target} characters.
 
 Rules:
-- Keep the same section structure (MILITARY, HORMUZ STATUS, DIPLOMATIC, \
-SUPPLY & ROUTING, MARKET CONTEXT, REGIONAL IMPACT)
+- Keep the same section structure using these exact headers verbatim: \
+MILITARY:, HORMUZ STATUS:, DIPLOMATIC:, SUPPLY & ROUTING:, MARKET CONTEXT:, REGIONAL IMPACT:
 - For each section, keep ONLY the current state of affairs — drop the \
 timeline of how we got here
 - Merge all entries about the same topic into ONE updated statement with \

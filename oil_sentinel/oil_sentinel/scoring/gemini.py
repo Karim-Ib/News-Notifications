@@ -4,7 +4,7 @@ Send qualifying articles to Gemini for structured impact scoring.
 Output schema per article:
 {
   "direction":    "bullish" | "bearish" | "neutral",
-  "magnitude":    1-5,
+  "magnitude":    0-10,
   "confidence":   0.0-1.0,
   "event_type":   str,
   "narrative_key": str,
@@ -125,7 +125,7 @@ USER_TEMPLATE = (
     "Title: {title}\n"
     "Source: {source}\n"
     "Published: {published_at}\n"
-    "GDELT tone: {tone} (negative = negative sentiment; positive = positive sentiment)\n"
+    "GDELT tone: {tone} (scale −10 to +10; oil/conflict news typically −5 to +2; more negative = more negative sentiment)\n"
     "Actors: {actors}\n"
     "{body_section}"
     "Active narrative threads (reuse the EXACT key if this article is a follow-up):\n"
@@ -169,7 +169,7 @@ def _build_prompt(
     if body_text and body_text.strip():
         body_section = f"\nArticle text (first 1000 chars):\n{body_text[:1000]}\n\n"
     else:
-        body_section = "\n"
+        body_section = "\n[No body text — title-only scoring]\n\n"
 
     return USER_TEMPLATE.format(
         title=article.get("title") or "(no title)",

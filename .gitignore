@@ -20,6 +20,9 @@ oil_sentinel/config.ini
 oil_sentinel/oil_sentinel.db
 oil_sentinel/oil_sentinel.log*
 
+# Claude Code
+.claude/
+
 # IDE
 .idea/
 .vscode/
