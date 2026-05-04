@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from google import genai
@@ -330,12 +330,29 @@ async def score_pending_articles(
 
         now_utc = datetime.now(timezone.utc)
 
+        # Bulk-flush stale articles in one SQL statement rather than draining
+        # them one-by-one at 5-per-cycle. The GDELT date format (20260425T031500Z)
+        # sorts correctly as a plain string, so the < comparison is accurate.
+        cutoff = (now_utc - timedelta(hours=max_age_hours)).strftime("%Y%m%dT%H%M%SZ")
+        with transaction(conn):
+            result = conn.execute(
+                """
+                UPDATE articles SET scored = 2
+                WHERE scored = 0
+                  AND published_at IS NOT NULL
+                  AND published_at != ''
+                  AND published_at < ?
+                """,
+                (cutoff,),
+            )
+        if result.rowcount:
+            logger.info("Bulk pre-filter: flushed %d stale articles from queue", result.rowcount)
+
         for row in rows:
             article = dict(row)
 
-            # Pre-filter: skip articles whose publication date is older than
-            # max_age_hours. They would be blocked by the dispatch staleness guard
-            # anyway, so scoring them wastes Gemini quota.
+            # Per-article pre-filter: catches articles that slipped past the
+            # bulk flush (e.g. non-standard date formats) or arrived mid-cycle.
             pub_raw = article.get("published_at") or ""
             if pub_raw:
                 _pub_dt = None
