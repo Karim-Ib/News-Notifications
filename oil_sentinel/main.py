@@ -333,6 +333,7 @@ async def scoring_loop(cfg: Config, session: aiohttp.ClientSession, state: State
                 dedup_model=cfg.gemini.dedup_model,
                 batch_size=cfg.gemini.batch_size,
                 market_anomaly=state.market_anomaly,
+                max_age_hours=cfg.gdelt.max_article_age_hours,
             )
             if n:
                 logger.info("Scored %d articles", n)

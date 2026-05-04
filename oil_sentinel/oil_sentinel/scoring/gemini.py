@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from google import genai
@@ -302,6 +303,7 @@ async def score_pending_articles(
     batch_size: int = 5,
     market_anomaly: bool = False,
     sitrep_enabled: bool = True,
+    max_age_hours: int = 24,
 ) -> int:
     """
     Pull unscored articles from DB, extract body text, score with Gemini, create alerts.
@@ -326,8 +328,28 @@ async def score_pending_articles(
 
         logger.info("Scoring %d articles with Gemini", len(rows))
 
+        now_utc = datetime.now(timezone.utc)
+
         for row in rows:
             article = dict(row)
+
+            # Pre-filter: skip articles whose publication date is older than
+            # max_age_hours. They would be blocked by the dispatch staleness guard
+            # anyway, so scoring them wastes Gemini quota.
+            pub_raw = article.get("published_at") or ""
+            if pub_raw:
+                _pub_dt = None
+                for _fmt in ("%Y%m%dT%H%M%SZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        _pub_dt = datetime.strptime(pub_raw.strip(), _fmt).replace(tzinfo=timezone.utc)
+                        break
+                    except ValueError:
+                        continue
+                if _pub_dt and (now_utc - _pub_dt).total_seconds() > max_age_hours * 3600:
+                    with transaction(conn):
+                        mark_article_scored(conn, article["id"], skipped=True)
+                    logger.info("Pre-filter: stale article skipped [%s]", article.get("title", "")[:60])
+                    continue
 
             # ── Body text (cache-only before dedup) ──────────────────────────
             # Use body_text already in DB — no HTTP fetch yet.
