@@ -404,14 +404,14 @@ async def digest_loop(cfg: Config, session: aiohttp.ClientSession, state: State)
     """
     logger = logging.getLogger("digest_loop")
     digest_hours = cfg.telegram.digest_hours
-    slot_labels = {12: "Noon", 20: "Evening"}
+    slot_labels = {14: "Afternoon", 20: "Evening"}
     logger.info(
         "Digest loop started (slots=%s UTC, idle=%s)",
         digest_hours, cfg.idle.enabled,
     )
 
     while True:
-        now = datetime.now()  # local server time
+        now = datetime.now(timezone.utc)
         current_date = now.date()
         current_hour = now.hour
 

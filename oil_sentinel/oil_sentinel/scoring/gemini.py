@@ -115,7 +115,11 @@ BIAS CHECK — before writing direction, ask yourself:
 
 MAGNITUDE CALIBRATION — before writing magnitude, ask yourself:
   - Would a professional oil trader react immediately to this? If yes, score >= 7.
-  - Is this a follow-up to an already-known story? Downgrade 1-2 points.
+  - Is this a NEW ACTION within an ongoing situation (new strike, new sanction,
+    new agreement, confirmed escalation, updated figure)? Score it on its own
+    merits — familiar actors do NOT justify a downgrade.
+  - Is this purely repetitive reporting of the SAME event with no new facts
+    (same claim, same figures, just a different outlet)? Downgrade 1-2 points.
   - Is the source speculative or unconfirmed? Downgrade confidence, not magnitude.
 
 Return ONLY the JSON object. No markdown fences, no extra keys.\

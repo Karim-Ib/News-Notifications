@@ -481,37 +481,6 @@ async def _send_narrative_chart(
     alert_markers: Optional[list[tuple[datetime, str]]] = None,
     caption: str = "",
 ) -> None:
-    """Fetch price + narrative history, generate price-vs-narrative chart, send to Telegram."""
-    conn = get_connection(db_path)
-    try:
-        prices     = get_price_history(conn, "CL=F", hours=hours)
-        narratives = get_narrative_history(conn, hours=hours)
-    finally:
-        conn.close()
-
-    if len(prices) < 3:
-        logger.debug("Narrative chart skipped: only %d price samples available", len(prices))
-        return
-
-    chart_bytes = generate_price_narrative_chart(
-        prices, narratives, alert_markers=alert_markers
-    )
-    if not chart_bytes:
-        logger.debug("Narrative chart generation returned None")
-        return
-
-    await send_photo(session, bot_token, chat_id, chart_bytes, caption=caption)
-
-
-async def _send_narrative_chart(
-    db_path: str,
-    session: aiohttp.ClientSession,
-    bot_token: str,
-    chat_id: str,
-    hours: int = 168,
-    alert_markers: Optional[list[tuple[datetime, str]]] = None,
-    caption: str = "",
-) -> None:
     """
     Fetch 7-day WTI price and narrative history, generate two-panel chart, send to Telegram.
     Falls back to the plain price chart if narrative data is unavailable.
@@ -663,7 +632,14 @@ async def dispatch_alerts(
             alert = dict(row)
             magnitude = alert.get("magnitude") or 0
 
-            # Staleness guard: skip (and silently mark sent) if article is too old
+            # Sub-threshold → leave for digest.
+            # This check must come before the staleness guard so that digest-bound
+            # articles are never silently consumed by the restart-noise filter.
+            if magnitude < alert_threshold:
+                continue
+
+            # Staleness guard: only applied to above-threshold (immediate) alerts.
+            # Prevents a burst of outdated high-priority alerts after a bot restart.
             article_ts = _parse_to_utc(alert.get("article_published_at") or "")
             if article_ts and (now - article_ts).total_seconds() > max_article_age_hours * 3600:
                 logger.info(
@@ -671,10 +647,6 @@ async def dispatch_alerts(
                     alert["id"], article_ts.isoformat(), max_article_age_hours,
                 )
                 stale_ids.append(alert["id"])
-                continue
-
-            # Sub-threshold → leave for digest
-            if magnitude < alert_threshold:
                 continue
 
             narrative = alert.get("narrative_key") or "unknown"
@@ -730,15 +702,14 @@ async def dispatch_alerts(
 
         messages = _batch_messages(qualifying, narrative_state=narrative_state)
         last_msg_id = None
-        failed = False
+        any_sent = False
         for text in messages:
             msg_id = await send_message(session, bot_token, chat_id, text)
             if msg_id:
                 last_msg_id = msg_id
-            else:
-                failed = True
+                any_sent = True
 
-        if not failed:
+        if any_sent:
             with transaction(conn):
                 for alert in qualifying:
                     mark_alert_sent(conn, alert["id"], telegram_msg_id=last_msg_id)
@@ -847,15 +818,14 @@ async def dispatch_digest(
         sub_threshold.sort(key=lambda a: a.get("magnitude") or 0, reverse=True)
         messages = _digest_messages(sub_threshold, slot_label)
         last_msg_id = None
-        failed = False
+        any_sent = False
         for text in messages:
             msg_id = await send_message(session, bot_token, chat_id, text)
             if msg_id:
                 last_msg_id = msg_id
-            else:
-                failed = True
+                any_sent = True
 
-        if not failed:
+        if any_sent:
             with transaction(conn):
                 for alert in sub_threshold:
                     mark_alert_sent(conn, alert["id"], telegram_msg_id=last_msg_id)

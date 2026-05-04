@@ -28,8 +28,8 @@ Three independent loops run concurrently:
 | **Scoring** | 2 min | Sends unscored articles to Gemini, creates alerts in DB, recomputes narrative state |
 | **Dispatch** | every 2 min (paused overnight) | Sends qualifying alerts to Telegram immediately; attaches 24h price chart |
 | **Commands** | continuous (long-poll) | Receives and handles slash commands from the configured Telegram chat |
-| **Digest** | 12:00 & 20:00 local | Summarises all sub-threshold signals accumulated since last digest |
-| **Morning summary** | 09:00 local (idle mode) | Concise top-7 overnight briefing covering all signals since 22:00 |
+| **Digest** | 14:00 & 20:00 UTC | Summarises all sub-threshold signals accumulated since last digest |
+| **Morning summary** | 09:00 UTC (idle mode) | Concise top-7 overnight briefing covering all signals since 22:00 |
 
 ### Alert logic
 
@@ -38,14 +38,14 @@ Articles are scored by Gemini on a **0–10 magnitude scale**:
 | Magnitude | Meaning | Delivery |
 |---|---|---|
 | 7–10 | Significant to historic event (3%+ expected price move) | Immediate Telegram alert |
-| 4–6 | Moderate signal (1–3% move) | Twice-daily digest |
-| 0–3 | Minor / noise | Twice-daily digest |
+| 5–6 | Moderate signal (1–3% move) | Immediate Telegram alert |
+| 0–4 | Minor / background noise | Twice-daily digest |
 
 If a market price anomaly (z-score ≥ 2.0) coincides with scoring, the composite score gets a +1 bonus, making high-magnitude news even more likely to fire immediately.
 
 **Narrative state transitions** are the highest-priority signal. When the 48-hour sentiment window shifts from one state to another (e.g. `stable → escalation`), a dedicated alert fires immediately, bypassing all cooldowns.
 
-**Staleness guard**: When the bot restarts with a backlog of unscored articles, only articles whose GDELT index time is within `max_article_age_hours` (default: same as ingestion limit) are dispatched. Older alerts are silently marked as sent to prevent a burst of stale signals being sent against current prices. Chart markers always use article publication time (not scoring time) to ensure price/news correlation is accurate.
+**Staleness guard**: When the bot restarts with a backlog of unscored articles, only *above-threshold* alerts whose article publication time is within `max_article_age_hours` are dispatched. Older high-priority alerts are silently marked as sent to prevent a burst of stale signals firing against current prices. Sub-threshold alerts (digest-bound) are intentionally exempt — they accumulate normally and are included in the next scheduled digest regardless of age. Chart markers always use article publication time (not scoring time) to ensure price/news correlation is accurate.
 
 Long batches are automatically split across multiple Telegram messages (4096-char limit per message).
 
